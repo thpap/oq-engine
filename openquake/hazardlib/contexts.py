@@ -380,6 +380,11 @@ class PmapMaker(object):
         self.pne_mon = cmaker.mon('composing pnes', measuremem=False)
         self.gmf_mon = cmaker.mon('computing mean_std', measuremem=False)
 
+    def _3ctxs(self, rups, sites, dctx):
+        U = len(rups)
+        dctx = DistancesContext()
+        ## TODO
+        
     def _ctxs(self, rups_sites, grp_ids):
         self.numrups = 0
         self.numsites = 0
@@ -391,16 +396,19 @@ class PmapMaker(object):
                     if self.rup_indep and self.collapse_ruptures:
                         ctxs = self.collapse(ctxs, sites)
                     self.numrups += len(ctxs)
-                for rup, dctx in ctxs:
-                    mask = (dctx.rrup <= self.maximum_distance(
-                        rup.tectonic_region_type, rup.mag))
-                    r_sites = sites.filter(mask)
-                    for name in self.REQUIRES_DISTANCES:
-                        setattr(dctx, name, getattr(dctx, name)[mask])
-                    self.rupdata.add(rup, r_sites, dctx)
-                    self.rupdata.data['grp_id'].append(grp_ids)
-                    self.numsites += len(r_sites)
-                    yield rup, r_sites, dctx
+                if len(sites) == 1:
+                    yield self._3ctxs(rups, sites)
+                else:
+                    for rup, dctx in ctxs:
+                        mask = (dctx.rrup <= self.maximum_distance(
+                            rup.tectonic_region_type, rup.mag))
+                        r_sites = sites.filter(mask)
+                        for name in self.REQUIRES_DISTANCES:
+                            setattr(dctx, name, getattr(dctx, name)[mask])
+                        self.rupdata.add(rup, r_sites, dctx)
+                        self.rupdata.data['grp_id'].append(grp_ids)
+                        self.numsites += len(r_sites)
+                        yield rup, r_sites, dctx
         else:  # many sites, do not collapse, but filter
             for rups, sites in rups_sites:
                 with self.ctx_mon:
@@ -442,6 +450,28 @@ class PmapMaker(object):
                             p = pmap[grp_id]
                             p.setdefault(sid, 0.).array += (
                                 1.-pne) * rup.weight
+
+    def _update_pmap_ss(self, rctx, sctx, dctx):
+        # single-site version of _update_pmap
+        [sid] = sctx.sids
+        with self.gmf_mon:
+            mean_std = base.get_mean_std(  # shape (2, U, M, G)
+                sctx, rctx, dctx, self.imts, self.gsims)
+        with self.poe_mon:
+            ll = self.loglevels
+            poes = base.get_poes(mean_std, ll, self.trunclevel, self.gsims)
+            # shape (U, L, G)
+            for g, gsim in enumerate(self.gsims):
+                for m, imt in enumerate(ll):
+                    if hasattr(gsim, 'weight') and gsim.weight[imt] == 0:
+                        # set by the engine when parsing the gsim logictree
+                        # when 0 ignore the gsim: see _build_trts_branches
+                        poes[:, ll(imt), g] = 0
+        with self.pne_mon:
+            for grp_id in rctx.grp_ids:
+                pmap = self.pmap[grp_id]
+                for pne in rctx.get_probability_no_exceedance(poes):
+                    pmap.setdefault(sid, 1.).array *= pne
 
     def _ruptures(self, src):
         with self.cmaker.mon('iter_ruptures', measuremem=False):

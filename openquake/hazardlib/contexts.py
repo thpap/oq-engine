@@ -353,7 +353,8 @@ class PmapMaker(object):
                     self.rupdata.add(rup, r_sites, dctx)
                     self.rupdata.data['grp_id'].append(grp_ids)
                     self.numsites += len(r_sites)
-                    yield rup, r_sites, dctx
+                    for s, onesite in enumerate(r_sites.split_all()):
+                        yield rup, onesite, dctx.on_site(s)
         else:  # many sites
             for rups, sites in rups_sites:
                 with self.ctx_mon:
@@ -584,6 +585,13 @@ class DistancesContext(BaseContext):
     def __init__(self, param_dist_pairs=()):
         for param, dist in param_dist_pairs:
             setattr(self, param, dist)
+
+    def on_site(self, site_idx):
+        pairs = []
+        for dist in vars(self):
+            arr = numpy.array([getattr(self, dist)[site_idx]])
+            pairs.append((dist, arr))
+        return self.__class__(pairs)
 
     def roundup(self, minimum_distance):
         """

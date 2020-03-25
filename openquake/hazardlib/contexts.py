@@ -439,7 +439,7 @@ class PmapMaker(object):
             self._update_pmap(ctxs)
             self.calc_times[src_id] += numpy.array(
                 [self.numrups, self.numsites, time.time() - t0])
-        return AccumDict((grp_id, ~p if self.rup_indep else p)
+        return AccumDict((grp_id, 1-p if self.rup_indep else p)
                          for grp_id, p in self.pmap.items())
 
     def _make_src_mutex(self):
@@ -448,32 +448,28 @@ class PmapMaker(object):
             rups = self._ruptures(src)
             self.numrups = 0
             self.numsites = 0
-            L, G = len(self.cmaker.imtls.array), len(self.cmaker.gsims)
-            pmap = {grp_id: ProbabilityMap.build(L, G, src.indices,
-                                                 self.rup_indep)
-                    for grp_id in src.grp_ids}
+            pmap = self.zmaps()
             ctxs = self._ctxs(rups, sites, numpy.array(src.grp_ids))
             self._update_pmap(ctxs, pmap)
             for grp_id in src.grp_ids:
                 p = pmap[grp_id]
                 if self.rup_indep:
-                    p = ~p
+                    p = 1-p
                 p *= src.mutex_weight
                 self.pmap[grp_id] += p
             self.calc_times[src.source_id] += numpy.array(
                 [self.numrups, self.numsites, time.time() - t0])
         return self.pmap
 
-    def make(self):
-        self.rupdata = RupData(self.cmaker)
+    def zmaps(self):
         imtls = self.cmaker.imtls
         L, G = len(imtls.array), len(self.gsims)
-        sids = set()
-        for src in self.group:
-            sids.update(src.indices)
-        sids = numpy.uint32(sorted(sids))
-        self.pmap = AccumDict(accum=ProbabilityMap.build(
-            L, G, sids, 0 if self.src_mutex else self.rup_indep))
+        zeros = numpy.ones((L, G)) if self.rup_indep else numpy.zeros((L, G))
+        return AccumDict(accum=AccumDict(accum=zeros))  # grp_id->sid->LG
+
+    def make(self):
+        self.rupdata = RupData(self.cmaker)
+        self.pmap = self.zmaps()  # grp_id -> sid -> LG
         # AccumDict of arrays with 3 elements nrups, nsites, calc_time
         self.calc_times = AccumDict(accum=numpy.zeros(3, numpy.float32))
         self.totrups = 0
@@ -482,6 +478,8 @@ class PmapMaker(object):
         else:
             pmap = self._make_src_indep()
         rdata = {k: numpy.array(v) for k, v in self.rupdata.data.items()}
+        for grp_id in pmap:
+            pmap[grp_id] = ProbabilityMap.from_dict(pmap[grp_id])
         return pmap, rdata, self.calc_times,  dict(totrups=self.totrups)
 
     def collapse_psd(self, rups, sites):

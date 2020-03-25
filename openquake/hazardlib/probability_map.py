@@ -139,6 +139,18 @@ class ProbabilityMap(Mapping):
         return self
 
     @classmethod
+    def from_dict(cls, dictarray):
+        """
+        :param dictarray: a dictionary of arrays of shape (L, G)
+        """
+        y, z = next(iter(dictarray.values())).shape
+        sids = numpy.uint32(sorted(set(dictarray)))
+        self = cls(sids, y, z)
+        for sid in sids:
+            self[sid] = dictarray[sid]
+        return self
+
+    @classmethod
     def from_array(cls, array, sids):
         """
         :param array: array of shape (N, L) or (N, L, I)

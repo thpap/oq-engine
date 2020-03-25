@@ -21,7 +21,6 @@ import numpy
 from scipy.stats import norm
 from openquake.baselib.general import group_array
 from openquake.hazardlib.imt import from_string
-from openquake.hazardlib.probability_map import ProbabilityCurve
 from openquake.commonlib.oqvalidation import check_same_levels
 
 
@@ -181,9 +180,9 @@ class Amplifier(object):
             lst = []
             for imt in self.imtls:
                 slc = self.imtls(imt)
-                new = self.amplify_one(ampl_code, imt, pcurve.array[slc])
+                new = self.amplify_one(ampl_code, imt, pcurve[slc])
                 lst.append(new)
-            out.append(ProbabilityCurve(numpy.concatenate(lst)))
+            out.append(numpy.concatenate(lst))
         return out
 
     def amplify_gmvs(self, ampl_code, gmvs, imt):

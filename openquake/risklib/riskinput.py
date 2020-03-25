@@ -56,10 +56,7 @@ def get_output(crmodel, assets_by_taxo, haz, rlzi=None):
     :param rlzi: if given, a realization index
     :returns: an ArrayWrapper loss_type -> array of shape (A, ...)
     """
-    if hasattr(haz, 'array'):  # classical
-        eids = []
-        data = [haz.array[crmodel.imtls(imt), 0] for imt in crmodel.imtls]
-    elif isinstance(haz, numpy.ndarray):
+    if isinstance(haz, numpy.ndarray):
         # NB: in GMF-based calculations the order in which
         # the gmfs are stored is random since it depends on
         # which hazard task ends first; here we reorder
@@ -69,9 +66,13 @@ def get_output(crmodel, assets_by_taxo, haz, rlzi=None):
         # sample method would receive the means in random
         # order and produce random results even if the
         # seed is set correctly; very tricky indeed! (MS)
-        haz.sort(order='eid')
-        eids = haz['eid']
-        data = haz['gmv']  # shape (E, M)
+        if haz.dtype.names:
+            haz.sort(order='eid')
+            eids = haz['eid']
+            data = haz['gmv']  # shape (E, M)
+        else:  # pmap from a classical calculation
+            eids = []
+            data = [haz[crmodel.imtls(imt), 0] for imt in crmodel.imtls]
     elif haz == 0:  # no hazard for this site (event based)
         eids = numpy.arange(1)
         data = []

@@ -69,8 +69,8 @@ class ClassicalRiskTestCase(CalculatorTestCase):
         self.run_calc(case_5.__file__, 'job_h.ini,job_r.ini')
 
         # check the cutoff in classical.fix_ones
-        poes = self.calc.datastore['poes/grp-00'].array
-        num_ones = (poes == 1.).sum()
+        pmap = self.calc.datastore['poes/grp-00']
+        num_ones = (pmap[0] == 1.).sum()
         self.assertEqual(num_ones, 0)
 
         # check mean loss curves

@@ -54,7 +54,7 @@ def _check_curves(sid, rlzs, curves, imtls, poes_disagg):
     bad = 0
     for rlz, curve in zip(rlzs, curves):
         for imt in imtls:
-            max_poe = curve[imt].max()
+            max_poe = curve[imtls(imt)].max()
             for poe in poes_disagg:
                 if poe > max_poe:
                     logging.warning(POE_TOO_BIG, sid, poe, max_poe, rlz, imt)
@@ -83,9 +83,9 @@ def _iml4(rlzs, iml_disagg, imtls, poes_disagg, curves):
         if poes_disagg == (None,):
             for m, imt in enumerate(imtls):
                 iml4[s, m, 0, z] = imtls[imt]
-        elif curve:
+        elif curve.sum():
             for m, imt in enumerate(imtls):
-                poes = curve[imt][::-1]
+                poes = curve[imtls(imt), 0][::-1]
                 imls = imtls[imt][::-1]
                 iml4[s, m, :, z] = numpy.interp(poes_disagg, poes, imls)
     return hdf5.ArrayWrapper(
@@ -185,8 +185,7 @@ class DisaggregationCalculator(base.HazardCalculator):
         poes = []
         for rlz in rlzs:
             pmap = self.pgetter.get(rlz)
-            poes.append(pmap[sid].convert(self.oqparam.imtls)
-                        if sid in pmap else None)
+            poes.append(pmap[sid] if sid in pmap else None)
         return poes
 
     def check_poes_disagg(self, curves, rlzs):
@@ -239,8 +238,7 @@ class DisaggregationCalculator(base.HazardCalculator):
             rlzs = numpy.zeros((self.N, Z), int)
             if self.R > 1:
                 for sid in self.sitecol.sids:
-                    curves = numpy.array(
-                        [pc.array for pc in self.pgetter.get_pcurves(sid)])
+                    curves = numpy.array(self.pgetter.get_pcurves(sid))
                     mean = getters.build_stat_curve(
                         curves, oq.imtls, stats.mean_curve, self.ws)
                     rlzs[sid] = util.closest_to_ref(curves, mean.array)[:Z]

@@ -20,7 +20,6 @@ import sys
 import unittest
 import numpy
 from openquake.baselib.general import gettemp
-from openquake.hazardlib.probability_map import combine
 from openquake.calculators import getters
 from openquake.calculators.views import view
 from openquake.calculators.export import export
@@ -75,11 +74,6 @@ class DisaggregationTestCase(CalculatorTestCase):
         pmaps = []
         for grp in sorted(pgetter.dstore['poes']):
             pmaps.append(pgetter.get_mean(grp))
-        # make sure that the combination of the contributions is okay
-        pmap = pgetter.get_mean()  # total mean map
-        cmap = combine(pmaps)  # combination of the mean maps per source group
-        for sid in pmap:
-            numpy.testing.assert_almost_equal(pmap[sid].array, cmap[sid].array)
 
     def test_case_2(self):
         # this is a case with disagg_outputs = Mag and 4 realizations

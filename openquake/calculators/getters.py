@@ -188,7 +188,7 @@ class PmapGetter(object):
             for rlzi in rlzis:
                 if rlzi == r:
                     pcurve |= probability_map.ProbabilityCurve(
-                        pc.array[:, [gsim_idx]])
+                        pc[:, [gsim_idx]])
         return pcurve
 
     def items(self, kind=''):

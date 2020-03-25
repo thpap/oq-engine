@@ -99,12 +99,15 @@ def classical(group, src_filter, gsims, param, monitor=Monitor()):
     """
     if not hasattr(src_filter, 'sitecol'):  # do not filter
         src_filter = SourceFilter(src_filter, {})
-
-    # Get the parameters assigned to the group
+    sids = src_filter.sitecol.sids
+    # get the parameters assigned to the group
     src_mutex = getattr(group, 'src_interdep', None) == 'mutex'
     cluster = getattr(group, 'cluster', None)
     trts = set()
-    for src, _ in src_filter(group):  # make sure src.indices is set
+    for src, _ in src_filter(group):
+        # make sure src.indices is set
+        if not hasattr(src, 'indices'):
+            src.indices = sids
         if not src.num_ruptures:
             # src.num_ruptures may not be set, so it is set here
             src.num_ruptures = src.count_ruptures()
@@ -112,6 +115,8 @@ def classical(group, src_filter, gsims, param, monitor=Monitor()):
         if cluster:
             src.temporal_occurrence_model = FatedTOM(time_span=1)
         trts.add(src.tectonic_region_type)
+    if not trts:  # everything was filtered out
+        return {'pmap': {}}
 
     param['maximum_distance'] = src_filter.integration_distance
     [trt] = trts  # there must be a single tectonic region type
@@ -127,8 +132,7 @@ def classical(group, src_filter, gsims, param, monitor=Monitor()):
 
     if cluster:
         tom = getattr(group, 'temporal_occurrence_model')
-        pmap = _cluster(
-            src_filter.sitecol.sids, param['imtls'], tom, gsims, pmap)
+        pmap = _cluster(sids, param['imtls'], tom, gsims, pmap)
     return dict(pmap=pmap, calc_times=calc_times, rup_data=rup_data,
                 extra=extra)
 
@@ -189,8 +193,8 @@ def calc_hazard_curves(
     param = dict(imtls=imtls, truncation_level=truncation_level,
                  filter_distance=filter_distance, reqv=reqv,
                  cluster=grp.cluster, shift_hypo=shift_hypo)
-    sids = srcfilter.sitecol.sids
-    pmap = ProbabilityMap(sids, len(imtls.array), 1)
+    sitecol = getattr(srcfilter, 'sitecol', srcfilter)
+    pmap = ProbabilityMap(sitecol.sids, len(imtls.array), 1)
     # Processing groups with homogeneous tectonic region
     gsim = gsim_by_trt[groups[0][0].tectonic_region_type]
     mon = Monitor()
@@ -204,5 +208,4 @@ def calc_hazard_curves(
         for dic in it:
             for grp_id, pval in dic['pmap'].items():
                 pmap |= pval
-    sitecol = getattr(srcfilter, 'sitecol', srcfilter)
     return pmap.convert(imtls, len(sitecol.complete))

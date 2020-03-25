@@ -179,7 +179,7 @@ class ProbabilityMap(Mapping):
         for imt in curves.dtype.names:
             curves_by_imt = curves[imt]
             for sid in self:
-                curves_by_imt[sid] = self[sid, imtls(imt), idx]
+                curves_by_imt[sid] = self[sid][imtls(imt), idx]
         return curves
 
     def copy(self):

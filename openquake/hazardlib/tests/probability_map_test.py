@@ -24,19 +24,23 @@ from openquake.hazardlib.probability_map import ProbabilityMap
 class ProbabilityMapTestCase(unittest.TestCase):
     def test(self):
         pmap1 = ProbabilityMap.build(3, 1, sids=[0, 1, 2])
-        pmap1[0].array[0] = .4
+        pmap1[0][0] = .4
 
         pmap2 = ProbabilityMap.build(3, 1, sids=[0, 1, 2])
-        pmap2[0].array[0] = .5
+        pmap2[0][0] = .5
 
         # test probability composition
         pmap = pmap1 | pmap2
-        numpy.testing.assert_equal(pmap[0].array, [[.7], [0], [0]])
+        numpy.testing.assert_equal(pmap[0], [[.7], [0], [0]])
 
         # test probability multiplication
         pmap = pmap1 * pmap2
-        numpy.testing.assert_equal(pmap[0].array, [[.2], [0], [0]])
+        numpy.testing.assert_equal(pmap[0], [[.2], [0], [0]])
+
+        # test probability sum
+        pmap = pmap1 + pmap2
+        numpy.testing.assert_equal(pmap[0], [[.9], [0], [0]])
 
         # test pmap power
         pmap = pmap1 ** 2
-        numpy.testing.assert_almost_equal(pmap[0].array, [[.16], [0], [0]])
+        numpy.testing.assert_almost_equal(pmap[0], [[.16], [0], [0]])

@@ -182,7 +182,7 @@ def make_hmap(pmap, imtls, poes, sid=None):
     """
     if sid is None:
         sids = pmap.sids
-    else:  # passed a probability curve
+    else:  # passed a probability curve array
         pmap = {sid: pmap}
         sids = [sid]
     M, P = len(imtls), len(poes)
@@ -190,10 +190,10 @@ def make_hmap(pmap, imtls, poes, sid=None):
     if len(pmap) == 0:
         return hmap  # empty hazard map
     for i, imt in enumerate(imtls):
-        curves = numpy.array([pmap[sid].array[imtls(imt), 0] for sid in sids])
+        curves = numpy.array([pmap[sid][imtls(imt), 0] for sid in sids])
         data = compute_hazard_maps(curves, imtls[imt], poes)  # array (N, P)
         for sid, value in zip(sids, data):
-            array = hmap[sid].array
+            array = hmap[sid]
             for j, val in enumerate(value):
                 array[i, j] = val
     return hmap

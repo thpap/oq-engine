@@ -64,12 +64,12 @@ from openquake.hazardlib.sourceconverter import SourceGroup
 from openquake.hazardlib.tom import FatedTOM
 
 
-def _cluster(imtls, tom, gsims, pmap):
+def _cluster(sids, imtls, tom, gsims, pmap):
     """
     Computes the probability map in case of a cluster group
     """
     L, G = len(imtls.array), len(gsims)
-    pmapclu = AccumDict(accum=ProbabilityMap(L, G))
+    pmapclu = AccumDict(accum=ProbabilityMap(sids, L, G))
     # Get temporal occurrence model
     # Number of occurrences for the cluster
     first = True
@@ -104,7 +104,7 @@ def classical(group, src_filter, gsims, param, monitor=Monitor()):
     src_mutex = getattr(group, 'src_interdep', None) == 'mutex'
     cluster = getattr(group, 'cluster', None)
     trts = set()
-    for src in group:
+    for src, _ in src_filter(group):  # make sure src.indices is set
         if not src.num_ruptures:
             # src.num_ruptures may not be set, so it is set here
             src.num_ruptures = src.count_ruptures()
@@ -127,7 +127,8 @@ def classical(group, src_filter, gsims, param, monitor=Monitor()):
 
     if cluster:
         tom = getattr(group, 'temporal_occurrence_model')
-        pmap = _cluster(param['imtls'], tom, gsims, pmap)
+        pmap = _cluster(
+            src_filter.sitecol.sids, param['imtls'], tom, gsims, pmap)
     return dict(pmap=pmap, calc_times=calc_times, rup_data=rup_data,
                 extra=extra)
 
@@ -188,7 +189,8 @@ def calc_hazard_curves(
     param = dict(imtls=imtls, truncation_level=truncation_level,
                  filter_distance=filter_distance, reqv=reqv,
                  cluster=grp.cluster, shift_hypo=shift_hypo)
-    pmap = ProbabilityMap(len(imtls.array), 1)
+    sids = srcfilter.sitecol.sids
+    pmap = ProbabilityMap(sids, len(imtls.array), 1)
     # Processing groups with homogeneous tectonic region
     gsim = gsim_by_trt[groups[0][0].tectonic_region_type]
     mon = Monitor()

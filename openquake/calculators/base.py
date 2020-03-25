@@ -130,7 +130,7 @@ def fix_ones(pmap):
     with .9999999999999999 (the float64 closest to 1).
     """
     for sid in pmap:
-        array = pmap[sid].array
+        array = pmap[sid]
         array[array == 1.] = .9999999999999999
     return pmap
 

@@ -114,16 +114,13 @@ class PmapGetter(object):
         self._pmap_by_grp = {}
         if 'poes' in self.dstore:
             # build probability maps restricted to the given sids
-            ok_sids = set(self.sids)
+            ok_sids = self.sids
             for grp, dset in self.dstore['poes'].items():
-                ds = dset['array']
-                L, G = ds.shape[1:]
-                pmap = probability_map.ProbabilityMap(L, G)
-                for idx, sid in enumerate(dset['sids'][()]):
-                    if sid in ok_sids:
-                        pmap[sid] = probability_map.ProbabilityCurve(ds[idx])
+                mask = numpy.isin(dset['sids'][()], ok_sids)
+                arr = dset['array'][mask, :, :]
+                pmap = probability_map.ProbabilityMap.from_array(arr, ok_sids)
                 self._pmap_by_grp[grp] = pmap
-                self.nbytes += pmap.nbytes
+                self.nbytes += pmap.array.nbytes
         return self._pmap_by_grp
 
     # used in risk calculation where there is a single site per getter
@@ -142,7 +139,8 @@ class PmapGetter(object):
         """
         self.init()
         assert self.sids is not None
-        pmap = probability_map.ProbabilityMap(len(self.imtls.array), 1)
+        pmap = probability_map.ProbabilityMap(
+            self.sids, len(self.imtls.array), 1)
         grps = [grp] if grp is not None else sorted(self._pmap_by_grp)
         for grp in grps:
             for gsim_idx, rlzis in enumerate(self.rlzs_by_grp[grp]):
@@ -166,10 +164,10 @@ class PmapGetter(object):
             except KeyError:  # no hazard for sid
                 continue
             for gsim_idx, rlzis in enumerate(self.rlzs_by_grp[grp]):
-                c = probability_map.ProbabilityCurve(pc.array[:, [gsim_idx]])
+                c = probability_map.ProbabilityCurve(pc[:, [gsim_idx]])
                 for rlzi in rlzis:
                     pcurves[rlzi] |= c
-        return pcurves
+        return [pcurve.array for pcurve in pcurves]
 
     def get_pcurve(self, s, r, g):  # used in disaggregation
         """
@@ -233,12 +231,7 @@ class PmapGetter(object):
         self.init()
         if len(self.weights) == 1:  # one realization
             # the standard deviation is zero
-            pmap = self.get(0, grp)
-            for sid, pcurve in pmap.items():
-                array = numpy.zeros(pcurve.array.shape)
-                array[:, 0] = pcurve.array[:, 0]
-                pcurve.array = array
-            return pmap
+            return self.get(0, grp)
         elif grp:
             raise NotImplementedError('multiple realizations')
         L = len(self.imtls.array)

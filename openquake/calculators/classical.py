@@ -100,7 +100,6 @@ def preclassical(srcs, srcfilter, gsims, params, monitor):
     Split and prefilter the sources
     """
     calc_times = AccumDict(accum=numpy.zeros(3, F32))  # nrups, nsites, time
-    pmap = AccumDict(accum=0)
     with monitor("splitting/filtering sources"):
         splits, _stime = split_sources(srcs)
     totrups = 0
@@ -112,9 +111,7 @@ def preclassical(srcs, srcfilter, gsims, params, monitor):
         dt = time.time() - t0
         calc_times[src.source_id] += F32(
             [src.num_ruptures, src.nsites, dt])
-        for grp_id in src.grp_ids:
-            pmap[grp_id] += 0
-    return dict(pmap=pmap, calc_times=calc_times, rup_data={'grp_id': []},
+    return dict(pmap={}, calc_times=calc_times, rup_data={'grp_id': []},
                 extra=dict(task_no=monitor.task_no, totrups=totrups,
                            trt=src.tectonic_region_type))
 
@@ -138,14 +135,14 @@ class ClassicalCalculator(base.HazardCalculator):
         # for an OOM it can become None, thus giving a very confusing error
         if dic is None:
             raise MemoryError('You ran out of memory!')
-        if not dic['pmap']:
+        extra = dic['extra']
+        self.totrups += extra['totrups']
+        d = dic['calc_times']  # srcid -> eff_rups, eff_sites, dt
+        self.calc_times += d
+        if not dic['pmap']:  # preclassical
             return acc
         trt = dic['extra'].pop('trt')
         with self.monitor('aggregate curves'):
-            extra = dic['extra']
-            self.totrups += extra['totrups']
-            d = dic['calc_times']  # srcid -> eff_rups, eff_sites, dt
-            self.calc_times += d
             srcids = set()
             eff_rups = 0
             eff_sites = 0
@@ -183,7 +180,7 @@ class ClassicalCalculator(base.HazardCalculator):
 
     def acc0(self):
         """
-        Initial accumulator, a dict grp_id -> ProbabilityMap(L, G)
+        Initial accumulator, a dict grp_id -> ProbabilityMap(N, L, G)
         """
         zd = AccumDict()
         num_levels = len(self.oqparam.imtls.array)
@@ -192,6 +189,7 @@ class ClassicalCalculator(base.HazardCalculator):
         gsims_by_trt = self.full_lt.get_gsims_by_trt()
         n = len(self.full_lt.sm_rlzs)
         trts = list(self.full_lt.gsim_lt.values)
+        sids = self.sitecol.sids
         for sm in self.full_lt.sm_rlzs:
             for grp_id in self.full_lt.grp_ids(sm.ordinal):
                 trt = trts[grp_id // n]
@@ -200,7 +198,7 @@ class ClassicalCalculator(base.HazardCalculator):
                 rparams.update(cm.REQUIRES_RUPTURE_PARAMETERS)
                 for dparam in cm.REQUIRES_DISTANCES:
                     rparams.add(dparam + '_')
-                zd[grp_id] = ProbabilityMap(num_levels, len(gsims))
+                zd[grp_id] = ProbabilityMap(sids, num_levels, len(gsims))
         zd.eff_ruptures = AccumDict(accum=0)  # trt -> eff_ruptures
         self.rparams = sorted(rparams)
         for k in self.rparams:
@@ -364,12 +362,12 @@ class ClassicalCalculator(base.HazardCalculator):
                     dset = self.datastore.getitem(kind)
                     for r, pmap in enumerate(pmaps):
                         for s in pmap:
-                            dset[s, r] = pmap[s].array  # shape (M, P)
+                            dset[s, r] = pmap[s]  # shape (M, P)
                 elif kind in ('hcurves-rlzs', 'hcurves-stats'):
                     dset = self.datastore.getitem(kind)
                     for r, pmap in enumerate(pmaps):
                         for s in pmap:
-                            dset[s, r] = pmap[s].array[:, 0]  # shape L
+                            dset[s, r] = pmap[s][:, 0]  # shape L
             self.datastore.flush()
 
     def post_execute(self, pmap_by_grp_id):
@@ -390,8 +388,7 @@ class ClassicalCalculator(base.HazardCalculator):
                     self.datastore[key] = pmap
                     self.datastore.set_attrs(key, trt=trt)
                     extreme = max(
-                        get_extreme_poe(pmap[sid].array, oq.imtls)
-                        for sid in pmap)
+                        get_extreme_poe(pmap[sid], oq.imtls) for sid in pmap)
                     data.append((grp_id, trt, extreme))
         if oq.hazard_calculation_id is None and 'poes' in self.datastore:
             self.datastore['disagg_by_grp'] = numpy.array(
@@ -467,16 +464,21 @@ def build_hazard(pgetter, N, hstats, individual_curves,
             ampcode = pgetter.dstore['sitecol'].ampcode
     imtls, poes, weights = pgetter.imtls, pgetter.poes, pgetter.weights
     M = len(imtls)
+    P = len(poes)
     L = len(imtls.array) if amplifier is None else len(amplifier.amplevels) * M
     R = len(weights)
     S = len(hstats)
     pmap_by_kind = {}
+    sids = pgetter.sids
     if R > 1 and individual_curves or not hstats:
-        pmap_by_kind['hcurves-rlzs'] = [ProbabilityMap(L) for r in range(R)]
+        pmap_by_kind['hcurves-rlzs'] = [
+            ProbabilityMap(sids, L) for r in range(R)]
     if hstats:
-        pmap_by_kind['hcurves-stats'] = [ProbabilityMap(L) for r in range(S)]
+        pmap_by_kind['hcurves-stats'] = [
+            ProbabilityMap(sids, L) for r in range(S)]
         if poes:
-            pmap_by_kind['hmaps-stats'] = [ProbabilityMap(L) for r in range(S)]
+            pmap_by_kind['hmaps-stats'] = [
+                ProbabilityMap(sids, M, P) for r in range(S)]
     combine_mon = monitor('combine pmaps', measuremem=False)
     compute_mon = monitor('compute stats', measuremem=False)
     for sid in pgetter.sids:
@@ -484,17 +486,19 @@ def build_hazard(pgetter, N, hstats, individual_curves,
             pcurves = pgetter.get_pcurves(sid)
             if amplifier:
                 pcurves = amplifier.amplify(ampcode[sid], pcurves)
-        if sum(pc.array.sum() for pc in pcurves) == 0:  # no data
+        if sum(pc.sum() for pc in pcurves) == 0:  # no data
             continue
         with compute_mon:
             if hstats:
-                arr = numpy.array([pc.array for pc in pcurves])
+                arr = numpy.array(pcurves)
                 for s, (statname, stat) in enumerate(hstats.items()):
                     pc = getters.build_stat_curve(arr, imtls, stat, weights)
-                    pmap_by_kind['hcurves-stats'][s][sid] = pc
+                    pmap_by_kind['hcurves-stats'][s][sid] = pc.array
                     if poes:
-                        hmap = calc.make_hmap(pc, pgetter.imtls, poes, sid)
-                        pmap_by_kind['hmaps-stats'][s].update(hmap)
+                        hmap = calc.make_hmap(
+                            pc.array, pgetter.imtls, poes, sid)
+                        for sid in hmap:
+                            pmap_by_kind['hmaps-stats'][s][sid] = hmap[sid]
             if R > 1 and individual_curves or not hstats:
                 for pmap, pc in zip(pmap_by_kind['hcurves-rlzs'], pcurves):
                     pmap[sid] = pc

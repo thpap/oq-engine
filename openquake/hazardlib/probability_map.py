@@ -15,12 +15,13 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
-from openquake.baselib.python3compat import zip
+
+import copy
+from collections.abc import Mapping
 import numpy
 
 F32 = numpy.float32
 F64 = numpy.float64
-BYTES_PER_FLOAT = 8
 
 
 class AllEmptyProbabilityMaps(ValueError):
@@ -106,7 +107,7 @@ class ProbabilityCurve(object):
         return curve[0]
 
 
-class ProbabilityMap(dict):
+class ProbabilityMap(Mapping):
     """
     A dictionary site_id -> ProbabilityCurve. It defines the complement
     operator `~`, performing the complement on each curve
@@ -120,9 +121,9 @@ class ProbabilityMap(dict):
     Such operators are implemented efficiently at the numpy level, by
     dispatching on the underlying array. Moreover there is a classmethod
     .build(L, I, sids, initvalue) to build initialized instances of
-    :class:`ProbabilityMap`. The map can be represented as 3D array of shape
-    (shape_x, shape_y, shape_z) = (N, L, I), where N is the number of site IDs,
-    L the total number of hazard levels and I the number of GSIMs.
+    :class:`ProbabilityMap`. The map can be represented as a 3D array of shape
+    (shape_x, shape_y, shape_z) = (N, L, G), where N is the number of site IDs,
+    L the total number of hazard levels and G the number of GSIMs.
     """
     @classmethod
     def build(cls, shape_y, shape_z, sids, initvalue=0., dtype=F64):
@@ -133,16 +134,15 @@ class ProbabilityMap(dict):
         :param initvalue: the initial value of the probability (default 0)
         :returns: a ProbabilityMap dictionary
         """
-        dic = cls(shape_y, shape_z)
-        for sid in sids:
-            dic.setdefault(sid, initvalue, dtype)
-        return dic
+        self = cls(numpy.uint32(sorted(set(sids))), shape_y, shape_z)
+        self.array[:] = initvalue
+        return self
 
     @classmethod
     def from_array(cls, array, sids):
         """
         :param array: array of shape (N, L) or (N, L, I)
-        :param sids: array of N site IDs
+        :param sids: array of N sorted site IDs
         """
         n_sites = len(sids)
         n = len(array)
@@ -151,53 +151,16 @@ class ProbabilityMap(dict):
                              % (n_sites, n))
         if len(array.shape) == 2:  # shape (N, L) -> (N, L, 1)
             array = array.reshape(array.shape + (1,))
-        self = cls(*array.shape[1:])
-        for sid, poes in zip(sids, array):
-            self[sid] = ProbabilityCurve(poes)
+        self = cls(sids, *array.shape[1:])
+        self.array = array
         return self
 
-    def __init__(self, shape_y, shape_z=1):
+    def __init__(self, sids, shape_y, shape_z=1):
+        self.sids = sids
+        self.sidx = {sid: idx for idx, sid in enumerate(sids)}
         self.shape_y = shape_y
         self.shape_z = shape_z
-
-    def setdefault(self, sid, value, dtype=F64):
-        """
-        Works like `dict.setdefault`: if the `sid` key is missing, it fills
-        it with an array and returns the associate ProbabilityCurve
-
-        :param sid: site ID
-        :param value: value used to fill the returned ProbabilityCurve
-        :param dtype: dtype used internally (F32 or F64)
-        """
-        try:
-            return self[sid]
-        except KeyError:
-            array = numpy.empty((self.shape_y, self.shape_z), dtype)
-            array.fill(value)
-            pc = ProbabilityCurve(array)
-            self[sid] = pc
-            return pc
-
-    @property
-    def sids(self):
-        """The ordered keys of the map as a numpy.uint32 array"""
-        return numpy.array(sorted(self), numpy.uint32)
-
-    @property
-    def array(self):
-        """
-        The underlying array of shape (N, L, I)
-        """
-        return numpy.array([self[sid].array for sid in sorted(self)])
-
-    @property
-    def nbytes(self):
-        """The size of the underlying array"""
-        try:
-            N, L, I = get_shape([self])
-        except AllEmptyProbabilityMaps:
-            return 0
-        return BYTES_PER_FLOAT * N * L * I
+        self.array = numpy.zeros((len(sids), shape_y, shape_z))
 
     # used when exporting to HDF5
     def convert(self, imtls, nsites, idx=0):
@@ -216,31 +179,34 @@ class ProbabilityMap(dict):
         for imt in curves.dtype.names:
             curves_by_imt = curves[imt]
             for sid in self:
-                curves_by_imt[sid] = self[sid].array[imtls(imt), idx]
+                curves_by_imt[sid] = self[sid, imtls(imt), idx]
         return curves
+
+    def copy(self):
+        """
+        :returns: an independent copy of the ProbabilityMap
+        """
+        new = copy.copy(self)
+        new.array = numpy.array(self.array)
+        return new
 
     def filter(self, sids):
         """
         Extracs a submap of self for the given sids.
         """
-        dic = self.__class__(self.shape_y, self.shape_z)
+        new = self.copy()
         for sid in sids:
-            try:
-                dic[sid] = self[sid]
-            except KeyError:
-                pass
-        return dic
+            new[sid] = self[sid]
+        return new
 
     def extract(self, inner_idx):
         """
         Extracts a component of the underlying ProbabilityCurves,
         specified by the index `inner_idx`.
         """
-        out = self.__class__(self.shape_y, 1)
+        out = self.__class__(self.sids, self.shape_y, 1)
         for sid in self:
-            curve = self[sid]
-            array = curve.array[:, inner_idx].reshape(-1, 1)
-            out[sid] = ProbabilityCurve(array)
+            out[sid] = self[sid][:, inner_idx].reshape(-1, 1)  # shape (L, 1)
         return out
 
     def __ior__(self, other):
@@ -249,103 +215,77 @@ class ProbabilityMap(dict):
         if (other.shape_y, other.shape_z) != (self.shape_y, self.shape_z):
             raise ValueError('%s has inconsistent shape with %s' %
                              (other, self))
-        self_sids = set(self)
-        other_sids = set(other)
-        for sid in self_sids & other_sids:
-            self[sid] = self[sid] | other[sid]
-        for sid in other_sids - self_sids:
-            self[sid] = other[sid]
+        for sid in other.sids:
+            self[sid] += other[sid] - self[sid] * other[sid]
         return self
 
     def __or__(self, other):
-        new = self.__class__(self.shape_y, self.shape_z)
-        new.update(self)
+        new = self.copy()
         new |= other
         return new
 
     __ror__ = __or__
 
     def __add__(self, other):
-        try:
-            other.get
-            is_pmap = True
-            sids = set(self) | set(other)
-        except AttributeError:  # no .get method, assume a float
-            is_pmap = False
+        new = self.copy()
+        if hasattr(other, 'sids'):  # assume it is a pmap
+            for sid in other:
+                new[sid] += other[sid]
+        else:  # assume it is a float
             assert 0. <= other <= 1., other  # must be a probability
-            sids = set(self)
-        new = self.__class__(self.shape_y, self.shape_z)
-        for sid in sids:
-            prob = other.get(sid, 1) if is_pmap else other
-            new[sid] = self.get(sid, 1) + prob
+            new.array += other
         return new
 
     def __iadd__(self, other):
         # this is used when composing mutually exclusive probabilities
         for sid in other:
-            pcurve = self.setdefault(sid, 0)
-            pcurve += other[sid]
+            self[sid] += other[sid]
         return self
 
     def __mul__(self, other):
-        try:
-            other.get
-            is_pmap = True
-            sids = set(self) | set(other)
-        except AttributeError:  # no .get method, assume a float
-            is_pmap = False
-            assert 0. <= other <= 1., other  # must be a probability
-            sids = set(self)
-        new = self.__class__(self.shape_y, self.shape_z)
-        for sid in sids:
-            prob = other.get(sid, 1) if is_pmap else other
-            new[sid] = self.get(sid, 1) * prob
+        new = self.copy()
+        if hasattr(other, 'sids'):  # assume it is a pmap
+            for sid in other:
+                new[sid] *= other[sid]
+        else:  # assume it is a float
+            new.array *= other
         return new
-
-    def __ipow__(self, n):
-        for sid, pcurve in self.items():
-            self[sid] = pcurve ** n
-        return self
 
     def __pow__(self, n):
-        new = self.__class__(self.shape_y, self.shape_z)
-        for sid, pcurve in self.items():
-            new[sid] = pcurve ** n
+        new = self.__class__.__new__(self.__class__)
+        vars(new).update(vars(self))
+        new.array = self.array ** n
         return new
+
+    _ipow__ = __pow__
 
     def __invert__(self):
-        new = self.__class__(self.shape_y, self.shape_z)
-        for sid in self:
-            if (self[sid].array != 1.).any():
-                new[sid] = ~self[sid]  # store only nonzero probabilities
+        new = self.__class__.__new__(self.__class__)
+        vars(new).update(vars(self))
+        new.array = 1. - self.array
         return new
 
-    def __getstate__(self):
-        return dict(shape_y=self.shape_y, shape_z=self.shape_z)
+    def __getitem__(self, sid):
+        return self.array[self.sidx[sid]]
+
+    def __setitem__(self, sid, arr):
+        self.array[self.sidx[sid]] = arr
+
+    def __iter__(self):
+        yield from self.sids
+
+    def __len__(self):
+        return len(self.sids)
 
     def __toh5__(self):
-        # converts to an array of shape (num_sids, shape_y, shape_z)
-        size = len(self)
-        sids = self.sids
-        shape = (size, self.shape_y, self.shape_z)
-        array = numpy.zeros(shape, F64)
-        for i, sid in numpy.ndenumerate(sids):
-            try:
-                array[i] = self[sid].array
-            except ValueError as exc:
-                # this should never happen, but I got a could not broadcast
-                # input array once for Australia
-                raise ValueError('%s on site_id=%d' % (exc, sid))
-        return dict(array=array, sids=sids), {}
+        return dict(array=self.array, sids=self.sids), {}
 
     def __fromh5__(self, dic, attrs):
-        # rebuild the map from sids and probs arrays
-        array = dic['array']
-        sids = dic['sids']
-        self.shape_y = array.shape[1]
-        self.shape_z = array.shape[2]
-        for sid, prob in zip(sids, array):
-            self[sid] = ProbabilityCurve(prob)
+        self.array = dic['array']
+        self.sids = dic['sids']
+        self.sidx = {sid: idx for idx, sid in enumerate(self.sids)}
+        self.shape_y = self.array.shape[1]
+        self.shape_z = self.array.shape[2]
 
     def __repr__(self):
         return '<%s %d, %d, %d>' % (self.__class__.__name__, len(self),

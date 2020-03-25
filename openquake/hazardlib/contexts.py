@@ -409,14 +409,11 @@ class PmapMaker(object):
                 if self.rup_indep:
                     for sid, pne in zip(r_sites.sids, pnes):
                         for grp_id in rup.grp_ids:
-                            p = pmap[grp_id]
-                            p.setdefault(sid, 1.).array *= pne
+                            pmap[grp_id][sid] *= pne
                 else:  # rup_mutex
                     for sid, pne in zip(r_sites.sids, pnes):
                         for grp_id in rup.grp_ids:
-                            p = pmap[grp_id]
-                            p.setdefault(sid, 0.).array += (
-                                1.-pne) * rup.weight
+                            pmap[grp_id][sid] += (1. - pne) * rup.weight
 
     def _ruptures(self, src):
         with self.cmaker.mon('iter_ruptures', measuremem=False):
@@ -452,7 +449,9 @@ class PmapMaker(object):
             self.numrups = 0
             self.numsites = 0
             L, G = len(self.cmaker.imtls.array), len(self.cmaker.gsims)
-            pmap = {grp_id: ProbabilityMap(L, G) for grp_id in src.grp_ids}
+            pmap = {grp_id: ProbabilityMap.build(L, G, src.indices,
+                                                 self.rup_indep)
+                    for grp_id in src.grp_ids}
             ctxs = self._ctxs(rups, sites, numpy.array(src.grp_ids))
             self._update_pmap(ctxs, pmap)
             for grp_id in src.grp_ids:
@@ -469,7 +468,12 @@ class PmapMaker(object):
         self.rupdata = RupData(self.cmaker)
         imtls = self.cmaker.imtls
         L, G = len(imtls.array), len(self.gsims)
-        self.pmap = AccumDict(accum=ProbabilityMap(L, G))  # grp_id -> pmap
+        sids = set()
+        for src in self.group:
+            sids.update(src.indices)
+        sids = numpy.uint32(sorted(sids))
+        self.pmap = AccumDict(accum=ProbabilityMap.build(
+            L, G, sids, 0 if self.src_mutex else self.rup_indep))
         # AccumDict of arrays with 3 elements nrups, nsites, calc_time
         self.calc_times = AccumDict(accum=numpy.zeros(3, numpy.float32))
         self.totrups = 0

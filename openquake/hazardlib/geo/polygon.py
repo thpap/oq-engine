@@ -19,9 +19,12 @@
 """
 Module :mod:`openquake.hazardlib.geo.polygon` defines :class:`Polygon`.
 """
+from functools import partial
 import numpy
+import pyproj
 import shapely.geometry
 import shapely.wkt
+import shapely.ops
 
 from openquake.hazardlib.geo.mesh import Mesh
 from openquake.hazardlib.geo import geodetic
@@ -130,6 +133,19 @@ class Polygon(object):
         polygon._polygon2d = polygon2d
         polygon._projection = proj
         return polygon
+
+    def get_area(self):
+        """
+        :returns: the area of the polygon in km^2
+        """
+        self._init_polygon2d()
+        pol = self._polygon2d
+        p1 = pyproj.Proj('EPSG:4326')
+        p2 = pyproj.Proj(proj='aea', lat_1=pol.bounds[1], lat_2=pol.bounds[3])
+        transfunc = partial(pyproj.transform, p1, p2)
+        area = shapely.ops.transform(transfunc, pol).area  # in m^2
+        import pdb; pdb.set_trace()
+        return area / 1E6  # in km^2
 
     def get_bbox(self):
         """

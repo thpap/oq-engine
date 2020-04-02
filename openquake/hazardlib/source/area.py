@@ -18,6 +18,7 @@ Module :mod:`openquake.hazardlib.source.area` defines :class:`AreaSource`.
 """
 import math
 from copy import deepcopy
+
 from openquake.hazardlib import geo, mfd
 from openquake.hazardlib.source.point import PointSource
 from openquake.hazardlib.source.base import ParametricSeismicSource
@@ -62,6 +63,16 @@ class AreaSource(ParametricSeismicSource):
         self.polygon = polygon
         self.area_discretization = area_discretization
         self.max_radius = 0
+
+    @property
+    def weight2(self):
+        """
+        Determine the source weight from the number of ruptures
+        """
+        ns = self.polygon.get_area() / self.area_discretization**2
+        import pdb; pdb.set_trace()
+        # ns is the approximated number of point sources inside
+        return ns * (self.nsites + 100) / 100
 
     def iter_ruptures(self, **kwargs):
         """

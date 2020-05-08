@@ -132,14 +132,20 @@ class RupData(object):
                 for s, dst in zip(sites.sids, getattr(dctx, dst_param)):
                     data[dst_param + '_'][r, s] = dst
 
-    def add_mean_std(self, mean_std, gsims):
+    def add_mean_std(self, mean_std, num_gsims, max_num_gsims):
         """
-        Addd mean0_, std0_, etc of shape (U, N, M, G)
+        Add mean_ and std_ of shape (U, N, M, G)
         """
         # mean_std has shape (2, N, M, G)
-        for g, gsim in enumerate(gsims):
-            self.data['mean%d_' % g].append([mean_std[0, :, :, g]])
-            self.data['std%d_' % g].append([mean_std[1, :, :, g]])
+        NMG = mean_std.shape[1:3] + (max_num_gsims,)
+        mean = numpy.zeros(NMG, F32)
+        std = numpy.zeros(NMG, F32)
+        for g in range(num_gsims):
+            mean[:, :, g] = mean_std[0, :, :, g]
+            std[:, :, g] = mean_std[1, :, :, g]
+        for g in range(max_num_gsims):
+            self.data['mean_'].append([mean])
+            self.data['std_'].append([std])
 
     def dictarray(self):
         """
@@ -165,6 +171,7 @@ class ContextMaker(object):
         self.max_sites_disagg = param.get('max_sites_disagg', 10)
         self.collapse_level = param.get('collapse_level', False)
         self.point_rupture_bins = param.get('point_rupture_bins', 20)
+        self.max_num_gsims = param.get('max_num_gsims', len(gsims))
         self.trt = trt
         self.gsims = gsims
         self.maximum_distance = (
@@ -448,7 +455,8 @@ class PmapMaker(object):
                 mean_std = base.get_mean_std(  # shape (2, N, M, G)
                     r_sites, rup, dctx, self.imts, self.gsims)
             if self.fewsites:
-                self.rupdata.add_mean_std(mean_std, self.gsims)
+                self.rupdata.add_mean_std(
+                    mean_std, len(self.gsims), self.max_num_gsims)
             with self.poe_mon:
                 ll = self.loglevels
                 poes = base.get_poes(mean_std, ll, self.trunclevel, self.gsims)

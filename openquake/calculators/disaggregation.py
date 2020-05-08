@@ -132,7 +132,8 @@ def compute_disagg(dstore, idxs, cmaker, iml3, trti, bin_edges, oq, monitor):
             rctx = RuptureContext((par, rupdata[par][ridx])
                                   for par in rupdata if not par.endswith('_'))
             dctx = DistancesContext((par[:-1], rupdata[par][ridx, [sid]])
-                                    for par in rupdata if par.endswith('_'))
+                                    for par in rupdata if par.endswith('_')
+                                    and not par.startswith(('mean', 'std')))
             ctxs.append((rctx, dctx))
         matrix = disagg.build_matrix(
             cmaker, singlesite, ctxs, iml3.imt, iml2, rlzs,

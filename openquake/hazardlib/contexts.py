@@ -132,6 +132,15 @@ class RupData(object):
                 for s, dst in zip(sites.sids, getattr(dctx, dst_param)):
                     data[dst_param + '_'][r, s] = dst
 
+    def add_mean_std(self, mean_std, gsims):
+        """
+        Addd mean0_, std0_, etc of shape (U, N, M, G)
+        """
+        # mean_std has shape (2, N, M, G)
+        for g, gsim in enumerate(gsims):
+            self.data['mean%d_' % g].append([mean_std[0, :, :, g]])
+            self.data['std%d_' % g].append([mean_std[1, :, :, g]])
+
     def dictarray(self):
         """
         :returns: key -> array
@@ -438,6 +447,8 @@ class PmapMaker(object):
             with self.gmf_mon:
                 mean_std = base.get_mean_std(  # shape (2, N, M, G)
                     r_sites, rup, dctx, self.imts, self.gsims)
+            if self.fewsites:
+                self.rupdata.add_mean_std(mean_std, self.gsims)
             with self.poe_mon:
                 ll = self.loglevels
                 poes = base.get_poes(mean_std, ll, self.trunclevel, self.gsims)

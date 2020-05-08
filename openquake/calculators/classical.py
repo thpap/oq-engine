@@ -188,6 +188,9 @@ class ClassicalCalculator(base.HazardCalculator):
             rup_data = dic['rup_data']
             nr = len(rup_data.get('grp_id', []))
             if nr:
+                for k, v in rup_data.items():
+                    if k.startswith(('mean', 'std')):
+                        hdf5.extend(self.datastore['rup/' + k], v)
                 for k in self.rparams:
                     try:
                         v = rup_data[k]
@@ -218,6 +221,7 @@ class ClassicalCalculator(base.HazardCalculator):
         gsims_by_trt = self.full_lt.get_gsims_by_trt()
         n = len(self.full_lt.sm_rlzs)
         trts = list(self.full_lt.gsim_lt.values)
+        G = 0
         for sm in self.full_lt.sm_rlzs:
             for grp_id in self.full_lt.grp_ids(sm.ordinal):
                 trt = trts[grp_id // n]
@@ -227,8 +231,12 @@ class ClassicalCalculator(base.HazardCalculator):
                 for dparam in cm.REQUIRES_DISTANCES:
                     rparams.add(dparam + '_')
                 zd[grp_id] = ProbabilityMap(num_levels, len(gsims))
+                G = max(G, len(gsims))
         zd.eff_ruptures = AccumDict(accum=0)  # trt -> eff_ruptures
         if self.few_sites:
+            shp = (None, self.N, len(self.oqparam.imtls), G)
+            self.datastore.create_dset('rup/mean_', F32, shp, 'gzip')
+            self.datastore.create_dset('rup/std_', F32, shp, 'gzip')
             self.rparams = sorted(rparams)
             for k in self.rparams:
                 # variable length arrays

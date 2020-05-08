@@ -109,15 +109,11 @@ def _eps3(truncation_level, n_epsilons):
 
 
 # this is inside an inner loop
-def _disaggregate(cmaker, site1, ctxs, iml1, eps3,
+def _disaggregate(site1, gsim, ctxs, iml1, eps3,
                   pne_mon=performance.Monitor(),
                   gmf_mon=performance.Monitor()):
     # disaggregate (separate) PoE in different contributions
     U, P, E = len(ctxs), len(iml1), len(eps3[1]) - 1
-    try:
-        gsim = cmaker.gsim_by_rlzi[iml1.rlzi]
-    except KeyError:
-        U = 0
     bdata = BinData(mags=numpy.zeros(U), dists=numpy.zeros(U),
                     lons=numpy.zeros(U), lats=numpy.zeros(U),
                     pnes=numpy.zeros((U, P, E)))
@@ -251,7 +247,11 @@ def build_matrix(cmaker, singlesite, ctxs, imt, iml2, rlzs,
     arr = numpy.zeros([len(b) - 1 for b in bins] + list(iml2.shape))
     for z, rlz in enumerate(rlzs):
         iml1 = hdf5.ArrayWrapper(iml2[:, z], dict(rlzi=rlz, imt=imt))
-        bdata = _disaggregate(cmaker, singlesite, ctxs, iml1, eps3,
+        try:
+            gsim = cmaker.gsim_by_rlzi[rlz]
+        except KeyError:
+            continue
+        bdata = _disaggregate(singlesite, gsim, ctxs, iml1, eps3,
                               pne_mon, gmf_mon)
         if bdata.pnes.sum():
             with mat_mon:
@@ -372,7 +372,7 @@ def disaggregation(
         contexts.RuptureContext.temporal_occurrence_model = (
             srcs[0].temporal_occurrence_model)
         ctxs = cmaker.from_srcs(srcs, sitecol)
-        bdata[trt] = _disaggregate(cmaker, sitecol, ctxs, imls, eps3)
+        bdata[trt] = _disaggregate(sitecol, gsim_by_trt[trt], ctxs, imls, eps3)
 
     if sum(len(bd.mags) for bd in bdata.values()) == 0:
         warnings.warn(

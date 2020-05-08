@@ -221,7 +221,7 @@ class ClassicalCalculator(base.HazardCalculator):
         gsims_by_trt = self.full_lt.get_gsims_by_trt()
         n = len(self.full_lt.sm_rlzs)
         trts = list(self.full_lt.gsim_lt.values)
-        G = 0
+        max_num_gsims = max(len(gsims) for gsims in gsims_by_trt.values())
         for sm in self.full_lt.sm_rlzs:
             for grp_id in self.full_lt.grp_ids(sm.ordinal):
                 trt = trts[grp_id // n]
@@ -231,10 +231,9 @@ class ClassicalCalculator(base.HazardCalculator):
                 for dparam in cm.REQUIRES_DISTANCES:
                     rparams.add(dparam + '_')
                 zd[grp_id] = ProbabilityMap(num_levels, len(gsims))
-                G = max(G, len(gsims))
         zd.eff_ruptures = AccumDict(accum=0)  # trt -> eff_ruptures
         if self.few_sites:
-            shp = (None, self.N, len(self.oqparam.imtls), G)
+            shp = (None, self.N, len(self.oqparam.imtls), max_num_gsims)
             self.datastore.create_dset('rup/mean_', F32, shp, 'gzip')
             self.datastore.create_dset('rup/std_', F32, shp, 'gzip')
             self.rparams = sorted(rparams)
@@ -259,7 +258,6 @@ class ClassicalCalculator(base.HazardCalculator):
                      for i, grp_ids in enumerate(self.datastore['grp_ids'])}
 
         # estimate max memory per core
-        max_num_gsims = max(len(gsims) for gsims in gsims_by_trt.values())
         max_num_grp_ids = max(len(grp_ids) for grp_ids in self.gidx)
         pmapbytes = self.N * num_levels * max_num_gsims * max_num_grp_ids * 8
         if pmapbytes > TWO32:

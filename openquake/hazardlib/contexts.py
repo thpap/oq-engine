@@ -130,20 +130,19 @@ class RupData(object):
                 dst[sites.sids] = getattr(dctx, dst_param)
                 self.data[dst_param + '_'].append(dst)
 
-    def add_mean_std(self, mean_std, num_gsims, max_num_gsims):
+    def add_mean_std(self, mean_std, sites, num_gsims, max_num_gsims):
         """
         Add mean_ and std_ of shape (U, N, M, G)
         """
         # mean_std has shape (2, N, M, G)
-        NMG = mean_std.shape[1:3] + (max_num_gsims,)
+        NMG = len(sites.complete), mean_std.shape[2], max_num_gsims
         mean = numpy.zeros(NMG, F32)
         std = numpy.zeros(NMG, F32)
         for g in range(num_gsims):
-            mean[:, :, g] = mean_std[0, :, :, g]
-            std[:, :, g] = mean_std[1, :, :, g]
-        for g in range(max_num_gsims):
-            self.data['mean_'].append([mean])
-            self.data['std_'].append([std])
+            mean[sites.sids, :, g] = mean_std[0, :, :, g]
+            std[sites.sids, :, g] = mean_std[1, :, :, g]
+        self.data['mean_'].append(mean)
+        self.data['std_'].append(std)
 
     def dictarray(self):
         """
@@ -451,7 +450,7 @@ class PmapMaker(object):
                     r_sites, rup, dctx, self.imts, self.gsims)
             if self.fewsites:
                 self.rupdata.add_mean_std(
-                    mean_std, len(self.gsims), self.max_num_gsims)
+                    mean_std, r_sites, len(self.gsims), self.max_num_gsims)
             with self.poe_mon:
                 ll = self.loglevels
                 poes = base.get_poes(mean_std, ll, self.trunclevel, self.gsims)

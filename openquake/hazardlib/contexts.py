@@ -315,6 +315,28 @@ class ContextMaker(object):
         self.add_rup_params(rupture)
         return sites, dctx
 
+    def multi_ctxs(self, ctxs, site_id):
+        """
+        :returns: a list of MultiContexts
+        """
+        RUP_PARAMS = {'occurrence_rate'} | self.REQUIRES_RUPTURE_PARAMETERS
+        acc = AccumDict(accum=[])  # (k, p) -> list
+        ks = set()
+        for rctx, dctx in ctxs:
+            r = rctx.occurrence_rate
+            k = len(rctx.occur_rates) if numpy.isnan(r) else 0
+            ks.add(k)
+            for param in RUP_PARAMS:
+                acc[k, param].append(getattr(rctx, param))
+            for param in self.REQUIRES_DISTANCES:
+                acc[k, param].append(getattr(dctx, param)[site_id])
+        out = []
+        for k in sorted(ks):
+            lst = [(p, numpy.array(acc[k, p]))
+                   for p in RUP_PARAMS | self.REQUIRES_DISTANCES]
+            out.append(RuptureContext(lst))
+        return out
+
     def make_ctxs(self, ruptures, sites, grp_ids, filt):
         """
         :returns:
@@ -738,6 +760,9 @@ class RuptureContext(BaseContext):
     def __init__(self, param_pairs=()):
         for param, value in param_pairs:
             setattr(self, param, value)
+
+    def roundup(self, minimum_distance):
+        return self
 
     def get_probability_no_exceedance(self, poes):
         """

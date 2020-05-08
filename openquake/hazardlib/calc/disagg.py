@@ -113,11 +113,19 @@ def _disaggregate(cmaker, sitecol, ctxs, iml1, eps3,
                   pne_mon=performance.Monitor(),
                   gmf_mon=performance.Monitor()):
     # disaggregate (separate) PoE in different contributions
-    U, P, E = len(ctxs), len(iml1), len(eps3[1]) - 1
+    P, E = len(iml1), len(eps3[2])
     try:
         gsim = cmaker.gsim_by_rlzi[iml1.rlzi]
     except KeyError:
-        U = 0
+        return BinData(mags=numpy.zeros(0), dists=numpy.zeros(0),
+                       lons=numpy.zeros(0), lats=numpy.zeros(0),
+                       pnes=numpy.zeros((0, P, E)))
+    for ctx in ctxs:
+        with gmf_mon:
+            mean_std = get_mean_std(
+                sitecol, ctx, ctx, [iml1.imt], [gsim])[..., 0, 0]  # (2, U)
+
+    U, P, E = len(ctxs), len(iml1), len(eps3[1]) - 1
     bdata = BinData(mags=numpy.zeros(U), dists=numpy.zeros(U),
                     lons=numpy.zeros(U), lats=numpy.zeros(U),
                     pnes=numpy.zeros((U, P, E)))

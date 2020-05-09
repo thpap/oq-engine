@@ -188,10 +188,7 @@ class ClassicalCalculator(base.HazardCalculator):
             rup_data = dic['rup_data']
             nr = len(rup_data.get('grp_id', []))
             if nr:
-                for k, v in rup_data.items():
-                    if k.startswith(('mean', 'std')):
-                        hdf5.extend(self.datastore['rup/' + k], v)
-                for k in self.rparams:
+                for k in self.rparams + ['mean_', 'std_']:
                     try:
                         v = rup_data[k]
                     except KeyError:

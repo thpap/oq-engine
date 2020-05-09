@@ -46,7 +46,13 @@ of %.7f for rlz=#%d, IMT=%s.
 The disaggregation PoE is too big or your model is wrong,
 producing too small PoEs.'''
 
-aac = numpy.testing.assert_allclose
+
+def aac(bdata1, bdata2):
+    for i, name in enumerate(bdata1._fields):
+        b1, b2 = bdata1[i], bdata2[i]
+        for u, (val1, val2) in enumerate(zip(b1, b2)):
+            msg = '%s:%d: %s != %s' % (name, u, val1, val2)
+            numpy.testing.assert_allclose(val1, val2, atol=.0001, err_msg=msg)
 
 
 def _check_curves(sid, rlzs, curves, imtls, poes_disagg):
@@ -154,15 +160,13 @@ def compute_disagg(dstore, idxs, cmaker, iml3, trti, bin_edges, oq, monitor):
             with gmf_mon:
                 mean = dstore['rup/mean_'][ok, sid, iml3.imti, g]
                 std = dstore['rup/std_'][ok, sid, iml3.imti, g]
-            ms = get_mean_stdv(site1, ctxs, iml3.imt, gsim)
+            ms = mean, std
             bdata = disagg.disaggregate(
                 ms, ctxs, iml3.imt, iml2[:, z], eps3, pne_mon)
-            '''
             ms2 = get_mean_stdv(site1, ctxs, iml3.imt, gsim)
             bdata2 = disagg.disaggregate(
                 ms2, ctxs, iml3.imt, iml2[:, z], eps3, pne_mon)
-            aac(bdata.pnes.sum(), bdata2.pnes.sum(), atol=.01)
-            '''
+            aac(bdata, bdata2)
             if bdata.pnes.sum():
                 with mat_mon:
                     matrix[..., z] = disagg.build_disagg_matrix(bdata, bins)

@@ -115,7 +115,8 @@ def compute_disagg(dstore, idxs, cmaker, iml3, trti, bin_edges, oq, monitor):
     with monitor('reading rupdata', measuremem=True):
         dstore.open('r')
         sitecol = dstore['sitecol']
-        rupdata = {k: dstore['rup/' + k][idxs] for k in dstore['rup']}
+        rupdata = {k: dstore['rup/' + k][idxs] for k in dstore['rup']
+                   if k not in 'mean_ std_'}
     RuptureContext.temporal_occurrence_model = PoissonTOM(
         oq.investigation_time)
     pne_mon = monitor('disaggregate_pne', measuremem=False)

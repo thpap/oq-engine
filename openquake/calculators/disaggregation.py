@@ -46,6 +46,8 @@ of %.7f for rlz=#%d, IMT=%s.
 The disaggregation PoE is too big or your model is wrong,
 producing too small PoEs.'''
 
+aac = numpy.testing.assert_allclose
+
 
 def _check_curves(sid, rlzs, curves, imtls, poes_disagg):
     # there may be sites where the sources are too small to produce
@@ -122,8 +124,9 @@ def compute_disagg(dstore, idxs, cmaker, iml3, trti, bin_edges, oq, monitor):
     pne_mon = monitor('disaggregate_pne', measuremem=False)
     mat_mon = monitor('build_disagg_matrix', measuremem=True)
     gmf_mon = monitor('disagg mean_std', measuremem=False)
+    gsims = list(cmaker.gsims)
     for sid, iml2 in zip(sitecol.sids, iml3):
-        singlesite = sitecol.filtered([sid])
+        site1 = sitecol.filtered([sid])
         bins = disagg.get_bins(bin_edges, sid)
         gsim_by_z = {}
         for z in range(iml3.shape[-1]):
@@ -133,32 +136,48 @@ def compute_disagg(dstore, idxs, cmaker, iml3, trti, bin_edges, oq, monitor):
                 pass
             else:
                 gsim_by_z[z] = gsim
-        rctxs = []
+        ctxs = []
         ok, = numpy.where(
             rupdata['rrup_'][:, sid] <= cmaker.maximum_distance(cmaker.trt))
         for ridx in ok:  # consider only the ruptures close to the site
-            rctx = RuptureContext((par, rupdata[par][ridx])
-                                  for par in rupdata if not par.endswith('_'))
+            ctx = RuptureContext((par, rupdata[par][ridx])
+                                 for par in rupdata if not par.endswith('_'))
             for par in rupdata:
                 if par.endswith('_'):
-                    setattr(rctx, par[:-1], rupdata[par][ridx, [sid]])
-            rctxs.append(rctx)
+                    setattr(ctx, par[:-1], rupdata[par][ridx, [sid]])
+            ctxs.append(ctx)
 
         eps3 = disagg._eps3(cmaker.trunclevel, oq.num_epsilon_bins)
         matrix = numpy.zeros([len(b) - 1 for b in bins] + list(iml2.shape))
         for z, gsim in gsim_by_z.items():
+            g = gsims.index(gsim)
             with gmf_mon:
-                mean_std = numpy.zeros((2, len(rctxs)))
-                for u, rctx in enumerate(rctxs):
-                    mean_std[:, u] = get_mean_std(
-                        singlesite, rctx, rctx, [iml3.imt], [gsim]).reshape(2)
+                mean = dstore['rup/mean_'][ok, sid, iml3.imti, g]
+                std = dstore['rup/std_'][ok, sid, iml3.imti, g]
+            ms = get_mean_stdv(site1, ctxs, iml3.imt, gsim)
             bdata = disagg.disaggregate(
-                mean_std, rctxs, iml3.imt, iml2[:, z], eps3, pne_mon)
+                ms, ctxs, iml3.imt, iml2[:, z], eps3, pne_mon)
+            '''
+            ms2 = get_mean_stdv(site1, ctxs, iml3.imt, gsim)
+            bdata2 = disagg.disaggregate(
+                ms2, ctxs, iml3.imt, iml2[:, z], eps3, pne_mon)
+            aac(bdata.pnes.sum(), bdata2.pnes.sum(), atol=.01)
+            '''
             if bdata.pnes.sum():
                 with mat_mon:
                     matrix[..., z] = disagg.build_disagg_matrix(bdata, bins)
         if matrix.any():
             yield {'trti': trti, 'imti': iml3.imti, sid: matrix}
+
+
+def get_mean_stdv(site1, ctxs, imt, gsim):
+    U = len(ctxs)
+    mean = numpy.zeros(U, numpy.float32)
+    std = numpy.zeros(U, numpy.float32)
+    for u, ctx in enumerate(ctxs):
+        mean[u], std[u] = get_mean_std(
+            site1, ctx, ctx, [imt], [gsim]).reshape(2)
+    return mean, std
 
 
 def agg_probs(*probs):

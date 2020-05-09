@@ -231,8 +231,11 @@ class ClassicalCalculator(base.HazardCalculator):
         zd.eff_ruptures = AccumDict(accum=0)  # trt -> eff_ruptures
         if self.few_sites:
             shp = (None, self.N, len(self.oqparam.imtls), max_num_gsims)
-            self.datastore.create_dset('rup/mean_', F32, shp, 'gzip')
-            self.datastore.create_dset('rup/std_', F32, shp, 'gzip')
+            # NB: the two big datasets below must not be compressed, otherwise
+            # in large calculations all the time will be spent in the
+            # master node doing the compression
+            self.datastore.create_dset('rup/mean_', F32, shp)
+            self.datastore.create_dset('rup/std_', F32, shp)
             self.rparams = sorted(rparams)
             for k in self.rparams:
                 # variable length arrays

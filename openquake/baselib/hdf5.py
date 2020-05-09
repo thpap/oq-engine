@@ -20,7 +20,6 @@ import os
 import ast
 import csv
 import inspect
-import logging
 import tempfile
 import importlib
 import itertools

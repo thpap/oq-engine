@@ -48,11 +48,18 @@ producing too small PoEs.'''
 
 
 def aac(bdata1, bdata2):
-    for i, name in enumerate(bdata1._fields):
-        b1, b2 = bdata1[i], bdata2[i]
-        for u, (val1, val2) in enumerate(zip(b1, b2)):
-            msg = '%s:%d: %s != %s' % (name, u, val1, val2)
-            numpy.testing.assert_allclose(val1, val2, atol=.0001, err_msg=msg)
+    if hasattr(bdata1, '_fields'):
+        for i, name in enumerate(bdata1._fields):
+            b1, b2 = bdata1[i], bdata2[i]
+            for u, (val1, val2) in enumerate(zip(b1, b2)):
+                msg = '%s:%d: %s != %s' % (name, u, val1, val2)
+                numpy.testing.assert_allclose(
+                    val1, val2, atol=.0001, err_msg=msg)
+    else:
+        for u, (val1, val2) in enumerate(zip(bdata1, bdata2)):
+            msg = '%d: %s != %s' % (u, val1, val2)
+            numpy.testing.assert_allclose(
+                val1, val2, atol=1E-5, err_msg=msg)
 
 
 def _check_curves(sid, rlzs, curves, imtls, poes_disagg):
@@ -155,18 +162,21 @@ def compute_disagg(dstore, idxs, cmaker, iml3, trti, bin_edges, oq, monitor):
 
         eps3 = disagg._eps3(cmaker.trunclevel, oq.num_epsilon_bins)
         matrix = numpy.zeros([len(b) - 1 for b in bins] + list(iml2.shape))
+        G = len(gsims)
+        with gmf_mon:
+            mean_std_ok = dstore['rup/mean_std_%d_%s' % (sid, iml3.imt)][ok]
+            mean_std_ok = numpy.array(  # shape (U, 2, G)
+                [mean_std.reshape(2, G) for mean_std in mean_std_ok])
         for z, gsim in gsim_by_z.items():
             g = gsims.index(gsim)
-            with gmf_mon:
-                mean = dstore['rup/mean_'][ok, sid, iml3.imti, g]
-                std = dstore['rup/std_'][ok, sid, iml3.imti, g]
-            ms = mean, std
+            ms = mean_std_ok[:, :, g].T  # shape (2, U)
             bdata = disagg.disaggregate(
                 ms, ctxs, iml3.imt, iml2[:, z], eps3, pne_mon)
-            ms2 = get_mean_stdv(site1, ctxs, iml3.imt, gsim)
-            bdata2 = disagg.disaggregate(
-                ms2, ctxs, iml3.imt, iml2[:, z], eps3, pne_mon)
-            aac(bdata, bdata2)
+            #ms2 = get_mean_stdv(site1, ctxs, iml3.imt, gsim)
+            #bdata2 = disagg.disaggregate(
+            #    ms2, ctxs, iml3.imt, iml2[:, z], eps3, pne_mon)
+            #aac(ms, ms2)
+            #aac(bdata, bdata2)
             if bdata.pnes.sum():
                 with mat_mon:
                     matrix[..., z] = disagg.build_disagg_matrix(bdata, bins)

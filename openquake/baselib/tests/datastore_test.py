@@ -22,7 +22,8 @@ import sys
 import unittest
 import tempfile
 import numpy
-from openquake.baselib.datastore import DataStore, read
+from openquake.baselib.datastore import DataStore, read, hdf5
+F32 = numpy.float32
 
 
 class DataStoreTestCase(unittest.TestCase):
@@ -60,6 +61,11 @@ class DataStoreTestCase(unittest.TestCase):
         # test `in` functionality with composite keys
         self.dstore['a/b'] = 42
         self.assertTrue('a/b' in self.dstore)
+
+        # test save_vlen
+        self.dstore.create_dset('vfloat', hdf5.vfloat32)
+        a, b = F32([.1, .2]), F32([.3, .4, .5])
+        self.dstore.hdf5.save_vlen('vfloat', [a, b])
 
     def test_export_path(self):
         path = self.dstore.export_path('hello.txt', tempfile.mkdtemp())

@@ -35,6 +35,7 @@ from openquake.commonlib.source_reader import random_filtered_sources
 from openquake.calculators import getters
 from openquake.calculators import base
 
+U8 = numpy.uint8
 U16 = numpy.uint16
 U32 = numpy.uint32
 F32 = numpy.float32
@@ -188,7 +189,7 @@ class ClassicalCalculator(base.HazardCalculator):
             rup_data = dic['rup_data']
             nr = len(rup_data.get('grp_id', []))
             if nr:
-                for k in self.rparams + ['mean_', 'std_']:
+                for k in self.rparams:
                     try:
                         v = rup_data[k]
                     except KeyError:
@@ -205,6 +206,13 @@ class ClassicalCalculator(base.HazardCalculator):
                         # store indices to the grp_ids table
                         v = U16([self.gidx[tuple(x)] for x in v])
                     hdf5.extend(self.datastore['rup/' + k], v)
+                for imt in self.oqparam.imtls:
+                    for sid in range(self.N):
+                        arr = rup_data['mean_std_%d_%s' % (sid, imt)]
+                        #hdf5.extend(self.datastore[
+                        #    'rup/mean_std_%d_%s' % (sid, imt)], arr)
+                        self.datastore.hdf5.save_vlen(
+                            'rup/mean_std_%d_%s' % (sid, imt), list(arr))
         return acc
 
     def acc0(self):
@@ -215,14 +223,14 @@ class ClassicalCalculator(base.HazardCalculator):
         num_levels = len(self.oqparam.imtls.array)
         rparams = {'grp_id', 'occurrence_rate',
                    'weight', 'probs_occur', 'lon_', 'lat_', 'rrup_'}
-        gsims_by_trt = self.full_lt.get_gsims_by_trt()
+        self.gsims_by_trt = self.full_lt.get_gsims_by_trt()
         n = len(self.full_lt.sm_rlzs)
         trts = list(self.full_lt.gsim_lt.values)
-        max_num_gsims = max(len(gsims) for gsims in gsims_by_trt.values())
+        max_num_gsims = max(len(gsims) for gsims in self.gsims_by_trt.values())
         for sm in self.full_lt.sm_rlzs:
             for grp_id in self.full_lt.grp_ids(sm.ordinal):
                 trt = trts[grp_id // n]
-                gsims = gsims_by_trt[trt]
+                gsims = self.gsims_by_trt[trt]
                 cm = ContextMaker(trt, gsims)
                 rparams.update(cm.REQUIRES_RUPTURE_PARAMETERS)
                 for dparam in cm.REQUIRES_DISTANCES:
@@ -230,12 +238,13 @@ class ClassicalCalculator(base.HazardCalculator):
                 zd[grp_id] = ProbabilityMap(num_levels, len(gsims))
         zd.eff_ruptures = AccumDict(accum=0)  # trt -> eff_ruptures
         if self.few_sites:
-            shp = (None, self.N, len(self.oqparam.imtls), max_num_gsims)
             # NB: the two big datasets below must not be compressed, otherwise
             # in large calculations all the time will be spent in the
             # master node doing the compression
-            self.datastore.create_dset('rup/mean_', F32, shp)
-            self.datastore.create_dset('rup/std_', F32, shp)
+            for sid in range(self.N):
+                for imt in self.oqparam.imtls:
+                    self.datastore.create_dset(
+                        'rup/mean_std_%d_%s' % (sid, imt), hdf5.vfloat32)
             self.rparams = sorted(rparams)
             for k in self.rparams:
                 # variable length arrays

@@ -21,6 +21,7 @@
 :func:`disaggregation` as well as several aggregation functions for
 extracting a specific PMF from the result of :func:`disaggregation`.
 """
+import copy
 import warnings
 import operator
 import collections
@@ -108,11 +109,19 @@ def _eps3(truncation_level, n_epsilons):
     return tn, eps, eps_bands
 
 
+def enum(arrays):
+    start = 0
+    for array in arrays:
+        n = len(array)
+        yield slice(start, start + n), array
+        start += n
+
+
 # this is inside an inner loop
-def disaggregate(mean_std, rups, imt, imls, eps3,
+def disaggregate(mean_std, ctxs, imt, imls, eps3,
                  pne_mon=performance.Monitor()):
     # disaggregate (separate) PoE in different contributions
-    U, P, E = len(rups), len(imls), len(eps3[2])
+    U, P, E = sum(len(ctx) for ctx in ctxs), len(imls), len(eps3[2])
     bdata = BinData(mags=numpy.zeros(U), dists=numpy.zeros(U),
                     lons=numpy.zeros(U), lats=numpy.zeros(U),
                     pnes=numpy.zeros((U, P, E)))
@@ -120,20 +129,20 @@ def disaggregate(mean_std, rups, imt, imls, eps3,
         truncnorm, epsilons, eps_bands = eps3
         cum_bands = numpy.array([eps_bands[e:].sum() for e in range(E)] + [0])
         imls = to_distribution_values(imls, imt)  # shape P
-        for u, rup in enumerate(rups):
-            bdata.mags[u] = rup.mag
-            bdata.lons[u] = rup.lon
-            bdata.lats[u] = rup.lat
-            bdata.dists[u] = rup.rrup[0]
+        for slc, ctx in enum(ctxs):
+            bdata.mags[slc] = ctx.mag
+            bdata.lons[slc] = ctx.lon
+            bdata.lats[slc] = ctx.lat
+            bdata.dists[slc] = ctx.rrup
         for p, iml in enumerate(imls):
             lvls = (iml - mean_std[0]) / mean_std[1]
             survival = truncnorm.sf(lvls)
             bins = numpy.searchsorted(epsilons, lvls)
             for e, eps_band in enumerate(eps_bands):
                 poes = _disagg_eps(survival, bins, e, eps_band, cum_bands)
-                for u, rup in enumerate(rups):
-                    bdata.pnes[u, p, e] = rup.get_probability_no_exceedance(
-                        poes[u])
+                for slc, ctx in enum(ctxs):
+                    bdata.pnes[slc, p, e] = ctx.get_probability_no_exceedance(
+                        poes[slc])
     return bdata
 
 
@@ -249,12 +258,20 @@ def get_mean_stdv(site1, ctxs, imt, gsim):
     :param imt: Intensity Measure Type
     :param gsim: GMPE instance
     """
-    U = len(ctxs)
+    U = sum(len(ctx.rrup) for ctx in ctxs)
     ms = numpy.zeros((2, U), numpy.float32)
-    for u, ctx in enumerate(ctxs):
+    for slc, ctx in enum(ctxs):
+        u = slc.stop - slc.start
+        if u > 1:
+            site = copy.copy(site1)
+            for k in site1.array.dtype.names:
+                setattr(site, k, getattr(site1, k).repeat(u))
+        else:
+            site = copy.copy(site1)
         if gsim.minimum_distance and ctx.rrup[0] < gsim.minimum_distance:
             ctx.rrup = numpy.float32([gsim.minimum_distance])
-        ms[:, u] = get_mean_std(site1, ctx, ctx, [imt], [gsim]).reshape(2)
+        ms[:, slc] = get_mean_std(
+            site, ctx, ctx, [imt], [gsim]).reshape(2, -1)
     return ms
 
 

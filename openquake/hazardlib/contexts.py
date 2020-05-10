@@ -26,6 +26,7 @@ import itertools
 import collections
 import numpy
 from scipy.interpolate import interp1d
+import pandas
 
 from openquake.baselib import hdf5, parallel
 from openquake.baselib.general import (
@@ -272,6 +273,22 @@ class ContextMaker(object):
                 raise ValueError('%s requires unknown rupture parameter %r' %
                                  (type(self).__name__, param))
             setattr(rupture, param, value)
+
+    def multi_ctxs(self, rup_data, ok):
+        """
+        :returns: a list of MultiContext objects
+        """
+        rrp = list(self.REQUIRES_RUPTURE_PARAMETERS)
+        df = pandas.DataFrame(rup_data)
+        other = set(rup_data) - self.REQUIRES_RUPTURE_PARAMETERS
+        ctxs = []
+        for rec, data in df.groupby(rrp):
+            ctx = MultiContext((k.rstrip('_'), numpy.array(data[k]))
+                               for k in other)
+            for k, v in zip(rrp, rec):
+                setattr(ctx, k, v)
+            ctxs.append(ctx)
+        return ctxs
 
     def make_contexts(self, sites, rupture, filt=True):
         """
@@ -758,28 +775,59 @@ class RuptureContext(BaseContext):
             calling the :func:`func <openquake.hazardlib.gsim.base.get_poes>
         """
         if numpy.isnan(self.occurrence_rate):  # nonparametric rupture
-            # Uses the formula
-            #
-            #    ∑ p(k|T) * p(X<x|rup)^k
-            #
-            # where `p(k|T)` is the probability that the rupture occurs k times
-            # in the time span `T`, `p(X<x|rup)` is the probability that a
-            # rupture occurrence does not cause a ground motion exceedance, and
-            # thesummation `∑` is done over the number of occurrences `k`.
-            #
-            # `p(k|T)` is given by the attribute probs_occur and
-            # `p(X<x|rup)` is computed as ``1 - poes``.
-            p_kT = self.probs_occur
-            prob_no_exceed = numpy.array(
-                [v * ((1 - poes) ** i) for i, v in enumerate(p_kT)])
-            prob_no_exceed = numpy.sum(prob_no_exceed, axis=0)
-            if isinstance(prob_no_exceed, numpy.ndarray):
-                prob_no_exceed[prob_no_exceed > 1.] = 1.  # sanity check
-                prob_no_exceed[poes == 0.] = 1.  # avoid numeric issues
-            return prob_no_exceed
-        # parametric rupture
+            return get_prob_no_exceed(self.probs_occur, poes)
+        # else parametric rupture
         tom = self.temporal_occurrence_model
         return tom.get_probability_no_exceedance(self.occurrence_rate, poes)
+
+
+def get_prob_no_exceed(p_kT, poes):
+    """
+    Compute the probabilities of no exceedance with the formula
+
+        ∑ p(k|T) * p(X<x|rup)^k
+
+    where `p(k|T)` is the probability that the rupture occurs k times
+    in the time span `T`, `p(X<x|rup)` is the probability that a
+    rupture occurrence does not cause a ground motion exceedance, and
+    thesummation `∑` is done over the number of occurrences `k`.
+
+    `p(k|T)` is given by the probs_occur and
+    `p(X<x|rup)` is computed as ``1 - poes``.
+    """
+    prob_no_exceed = numpy.array(
+        [v * ((1 - poes) ** i) for i, v in enumerate(p_kT)])
+    prob_no_exceed = numpy.sum(prob_no_exceed, axis=0)
+    if isinstance(prob_no_exceed, numpy.ndarray):
+        prob_no_exceed[prob_no_exceed > 1.] = 1.  # sanity check
+        prob_no_exceed[poes == 0.] = 1.  # avoid numeric issues
+    return prob_no_exceed
+
+
+class MultiContext(RuptureContext):
+    """
+    A context used in single-site multi-rupture situations.
+    """
+    def get_probability_no_exceedance(self, poes):
+        """
+        Compute the probabilities of no exceedance for the underlying ruptures
+
+        :param poes: U probabilities of exceedance
+        """
+        assert len(poes) == len(self.rrup)  # sanity check
+        pnes = numpy.zeros_like(poes)
+        p = ~numpy.isnan(self.occurrence_rate)  # parametric ruptures
+        np = ~p  # nonparametric ruptures
+        pnes[np] = numpy.array(
+            [get_prob_no_exceed(po, poe)
+             for po, poe in zip(self.probs_occur[np], poes[np])])
+        # parametric ruptures
+        pnes[p] = self.temporal_occurrence_model.get_probability_no_exceedance(
+            self.occurrence_rate[p], poes[p])
+        return pnes
+
+    def __len__(self):
+        return len(self.rrup)
 
 
 class Effect(object):

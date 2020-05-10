@@ -135,13 +135,9 @@ def compute_disagg(dstore, idxs, cmaker, iml3, trti, bin_edges, oq, monitor):
         ctxs = []
         ok, = numpy.where(
             rupdata['rrup_'][:, sid] <= cmaker.maximum_distance(cmaker.trt))
-        for ridx in ok:  # consider only the ruptures close to the site
-            ctx = RuptureContext((par, rupdata[par][ridx])
-                                 for par in rupdata if not par.endswith('_'))
-            for par in rupdata:
-                if par.endswith('_'):
-                    setattr(ctx, par[:-1], rupdata[par][ridx, [sid]])
-            ctxs.append(ctx)
+        dic = {k: v[:, sid] if k.endswith('_') else v
+               for k, v in rupdata.items()}
+        ctxs = cmaker.multi_ctxs(dic, ok)
         if not ctxs:
             continue
         eps3 = disagg._eps3(cmaker.trunclevel, oq.num_epsilon_bins)

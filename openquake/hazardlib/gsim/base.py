@@ -31,7 +31,7 @@ from scipy.special import ndtr
 from openquake.baselib.general import DeprecationWarning
 from openquake.hazardlib import imt as imt_module
 from openquake.hazardlib import const
-from openquake.hazardlib.contexts import KNOWN_DISTANCES
+from openquake.hazardlib.contexts import KNOWN_DISTANCES, MultiContext
 from openquake.hazardlib.contexts import *  # for backward compatibility
 
 
@@ -87,7 +87,10 @@ def get_mean_std(sctx, rctx, dctx, imts, gsims):
     """
     :returns: an array of shape (2, N, M, G) with means and stddevs
     """
-    N = len(sctx.sids)
+    if isinstance(rctx, MultiContext):
+        N = len(rctx.rrup)
+    else:
+        N = len(sctx.sids)
     M = len(imts)
     G = len(gsims)
     arr = numpy.zeros((2, N, M, G))

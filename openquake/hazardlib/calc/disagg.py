@@ -21,7 +21,6 @@
 :func:`disaggregation` as well as several aggregation functions for
 extracting a specific PMF from the result of :func:`disaggregation`.
 """
-import copy
 import warnings
 import operator
 import collections
@@ -251,27 +250,19 @@ def _digitize_lons(lons, lon_bins):
         return numpy.digitize(lons, lon_bins) - 1
 
 
-def get_mean_stdv(site1, ctxs, imt, gsim):
+def get_mean_stdv(ctxs, imt, gsim):
     """
-    :param site1: site collection with a single site
-    :param ctxs: a list of RuptureContexts with distances
+    :param ctxs: a list of MultiContexts
     :param imt: Intensity Measure Type
     :param gsim: GMPE instance
     """
     U = sum(len(ctx.rrup) for ctx in ctxs)
     ms = numpy.zeros((2, U), numpy.float32)
     for slc, ctx in enum(ctxs):
-        u = slc.stop - slc.start
-        if u > 1:
-            site = copy.copy(site1)
-            for k in site1.array.dtype.names:
-                setattr(site, k, getattr(site1, k).repeat(u))
-        else:
-            site = copy.copy(site1)
         if gsim.minimum_distance and ctx.rrup[0] < gsim.minimum_distance:
             ctx.rrup = numpy.float32([gsim.minimum_distance])
         ms[:, slc] = get_mean_std(
-            site, ctx, ctx, [imt], [gsim]).reshape(2, -1)
+            ctx, ctx, ctx, [imt], [gsim]).reshape(2, -1)
     return ms
 
 
@@ -364,7 +355,7 @@ def disaggregation(
         contexts.RuptureContext.temporal_occurrence_model = (
             srcs[0].temporal_occurrence_model)
         ctxs = cmaker.from_srcs(srcs, sitecol)
-        mean_std = get_mean_stdv(sitecol, ctxs, imt, gsim)
+        mean_std = get_mean_stdv(ctxs, imt, gsim)
         bdata[trt] = disaggregate(mean_std, ctxs, imt, imls, eps3)
 
     if sum(len(bd.mags) for bd in bdata.values()) == 0:

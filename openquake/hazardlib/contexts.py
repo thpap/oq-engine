@@ -274,7 +274,7 @@ class ContextMaker(object):
                                  (type(self).__name__, param))
             setattr(rupture, param, value)
 
-    def multi_ctxs(self, rup_data, ok):
+    def multi_ctxs(self, rup_data, site, ok):
         """
         :returns: a list of MultiContext objects
         """
@@ -287,6 +287,8 @@ class ContextMaker(object):
                                for k in other)
             for k, v in zip(rrp, rec):
                 setattr(ctx, k, v)
+            for k in site.array.dtype.names:
+                setattr(ctx, k, site.array[k].repeat(len(ctx)))
             ctxs.append(ctx)
         return ctxs
 

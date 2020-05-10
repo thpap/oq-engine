@@ -30,7 +30,7 @@ from openquake.baselib.python3compat import encode
 from openquake.hazardlib import stats
 from openquake.hazardlib.calc import disagg
 from openquake.hazardlib.imt import from_string
-from openquake.hazardlib.gsim.base import ContextMaker
+from openquake.hazardlib.gsim.base import ContextMaker, get_mean_std
 from openquake.hazardlib.contexts import RuptureContext
 from openquake.hazardlib.tom import PoissonTOM
 from openquake.commonlib import util
@@ -121,36 +121,44 @@ def compute_disagg(dstore, idxs, cmaker, iml3, trti, bin_edges, oq, monitor):
     pne_mon = monitor('disaggregate_pne', measuremem=False)
     mat_mon = monitor('build_disagg_matrix', measuremem=True)
     gmf_mon = monitor('disagg mean_std', measuremem=False)
-    for sid, iml2 in zip(sitecol.sids, iml3):
-        singlesite = sitecol.filtered([sid])
-        bins = disagg.get_bins(bin_edges, sid)
-        gsim_by_z = {}
-        for z in range(iml3.shape[-1]):
-            try:
-                gsim = cmaker.gsim_by_rlzi[iml3.rlzs[sid, z]]
-            except KeyError:
-                pass
-            else:
-                gsim_by_z[z] = gsim
-        ctxs = []
-        ok, = numpy.where(
-            rupdata['rrup_'][:, sid] <= cmaker.maximum_distance(cmaker.trt))
-        for ridx in ok:  # consider only the ruptures close to the site
-            ctx = RuptureContext((par, rupdata[par][ridx])
-                                 for par in rupdata if not par.endswith('_'))
-            for par in rupdata:
-                if par.endswith('_'):
-                    setattr(ctx, par[:-1], rupdata[par][ridx, [sid]])
-            ctxs.append(ctx)
+    maxdist = cmaker.maximum_distance(cmaker.trt)
+    g_by_r = {}
+    for g, rlzs in enumerate(cmaker.gsims.values()):
+        for r in rlzs:
+            g_by_r[r] = g
+    U, N = rupdata['rrup_'].shape
+    ctxs = []
+    ms = numpy.zeros((2, U, N, len(cmaker.gsims)), numpy.float32)
+    for u, rrup in enumerate(rupdata['rrup_']):
+        sids, = numpy.where(rrup <= maxdist)
+        sites = sitecol.filtered(sids)
+        n = len(sids)
+        ctx = RuptureContext((par, rupdata[par][u])
+                             for par in rupdata if not par.endswith('_'))
+        for par in rupdata:
+            if par.endswith('_'):
+                setattr(ctx, par[:-1], rupdata[par][u, sids])
+        ctxs.append(ctx)
         if not ctxs:
             continue
-        eps3 = disagg._eps3(cmaker.trunclevel, oq.num_epsilon_bins)
+        with gmf_mon:
+            ms[:, u, sids] = get_mean_std(
+                sites, ctx, ctx, [iml3.imt], cmaker.gsims).reshape(2, n, -1)
+
+    eps3 = disagg._eps3(cmaker.trunclevel, oq.num_epsilon_bins)
+    for sid, iml2 in zip(sitecol.sids, iml3):
+        bins = disagg.get_bins(bin_edges, sid)
+        g_by_z = {}
+        for z in range(iml3.shape[-1]):
+            try:
+                g_by_z[z] = g_by_r[iml3.rlzs[sid, z]]
+            except KeyError:
+                pass
+
         matrix = numpy.zeros([len(b) - 1 for b in bins] + list(iml2.shape))
-        for z, gsim in gsim_by_z.items():
-            with gmf_mon:
-                ms = disagg.get_mean_stdv(singlesite, ctxs, iml3.imt, gsim)
+        for z, g in g_by_z.items():
             bdata = disagg.disaggregate(
-                ms, ctxs, iml3.imt, iml2[:, z], eps3, pne_mon)
+                ms[:, :, sid, g], ctxs, iml3.imt, iml2[:, z], eps3, pne_mon)
             if bdata.pnes.sum():
                 with mat_mon:
                     matrix[..., z] = disagg.build_disagg_matrix(bdata, bins)

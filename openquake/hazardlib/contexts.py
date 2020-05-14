@@ -31,7 +31,7 @@ from openquake.baselib import hdf5, parallel
 from openquake.baselib.general import (
     AccumDict, DictArray, groupby, groupby_bin)
 from openquake.baselib.performance import Monitor
-from openquake.hazardlib import const, imt as imt_module
+from openquake.hazardlib import const, site, imt as imt_module
 from openquake.hazardlib.gsim import base
 from openquake.hazardlib.calc.filters import IntegrationDistance
 from openquake.hazardlib.probability_map import ProbabilityMap
@@ -41,8 +41,12 @@ bymag = operator.attrgetter('mag')
 bydist = operator.attrgetter('dist')
 I16 = numpy.int16
 F32 = numpy.float32
+
+KNOWN_RUP_PARAMS = frozenset('mag strike dip rake ztor hypo_lon '
+                             'hypo_lat hypo_depth width'.split())
 KNOWN_DISTANCES = frozenset(
     'rrup rx ry0 rjb rhypo repi rcdpp azimuth azimuth_cp rvolc'.split())
+KNOWN_SITE_PARAMS= set(site.site_param_dt)
 
 
 def get_distances(rupture, sites, param):
@@ -764,6 +768,20 @@ class RuptureContext(BaseContext):
                     array.flags.writeable = False
                 setattr(ctx, dist, array)
         return ctx
+
+    def get_key(self):
+        """
+        :returns: a tuple of scalar parameters, usable as key in a cache
+        """
+        lst = []
+        for k, v in vars(self).items():
+            if k in KNOWN_DISTANCES:
+                lst.append(v[0])
+            elif k in KNOWN_SITE_PARAMS:
+                lst.append(v[0])
+            elif k in KNOWN_RUP_PARAMS:
+                lst.append(v)
+        return tuple(lst)
 
     def get_mean_std(self, imts, gsims):
         """

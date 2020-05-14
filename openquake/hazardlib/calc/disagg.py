@@ -108,6 +108,19 @@ def _eps3(truncation_level, n_epsilons):
     return tn, eps, eps_bands
 
 
+def get_mean_std(ctxs, gsims, imt):
+    cache = {}  # key -> array of shape (2, G)
+    mean_std = numpy.zeros((2, len(ctxs), len(gsims)), numpy.float32)
+    for u, ctx in enumerate(ctxs):
+        key = ctx.get_key()
+        try:
+            mean_std[:, u] = cache[key]
+        except KeyError:
+            mean_std[:, u] = cache[key] = \
+                ctx.get_mean_std([imt], gsims).reshape(2, -1)
+    return mean_std
+
+
 # this is inside an inner loop
 def disaggregate(ctxs, zs_by_gsim, imt, iml2, eps3,
                  ms_mon=performance.Monitor(),
@@ -122,7 +135,7 @@ def disaggregate(ctxs, zs_by_gsim, imt, iml2, eps3,
     :param pne_mon: monitor for the probabilities of no exceedance
     """
     # disaggregate (separate) PoE in different contributions
-    U, E, G = len(ctxs), len(eps3[2]), len(zs_by_gsim)
+    U, E = len(ctxs), len(eps3[2])
     P, Z = iml2.shape
     dists = numpy.zeros(U)
     lons = numpy.zeros(U)
@@ -131,9 +144,8 @@ def disaggregate(ctxs, zs_by_gsim, imt, iml2, eps3,
         truncnorm, epsilons, eps_bands = eps3
         cum_bands = numpy.array([eps_bands[e:].sum() for e in range(E)] + [0])
         iml2 = to_distribution_values(iml2, imt)  # shape P, Z
-        mean_std = numpy.zeros((2, U, G), numpy.float32)
+        mean_std = get_mean_std(ctxs, zs_by_gsim, imt)
         for u, ctx in enumerate(ctxs):
-            mean_std[:, u] = ctx.get_mean_std([imt], zs_by_gsim).reshape(2, G)
             dists[u] = ctx.rrup[0]  # distance to the site
             lons[u] = ctx.clon[0]  # closest point of the rupture lon
             lats[u] = ctx.clat[0]  # closest point of the rupture lat

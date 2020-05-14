@@ -28,7 +28,7 @@ import numpy
 import scipy.stats
 
 from openquake.hazardlib import contexts
-from openquake.baselib import hdf5, performance
+from openquake.baselib import performance
 from openquake.baselib.general import AccumDict, groupby
 from openquake.hazardlib.calc import filters
 from openquake.hazardlib.geo.utils import get_longitudinal_extent
@@ -133,8 +133,7 @@ def disaggregate(ctxs, zs_by_gsim, imt, iml2, eps3,
         iml2 = to_distribution_values(iml2, imt)  # shape P, Z
         mean_std = numpy.zeros((2, U, G), numpy.float32)
         for u, ctx in enumerate(ctxs):
-            for g, gsim in enumerate(zs_by_gsim):
-                mean_std[:, u, g] = ctx.get_mean_std([imt], [gsim]).reshape(2)
+            mean_std[:, u] = ctx.get_mean_std([imt], zs_by_gsim).reshape(2, G)
             dists[u] = ctx.rrup[0]  # distance to the site
             lons[u] = ctx.clon[0]  # closest point of the rupture lon
             lats[u] = ctx.clat[0]  # closest point of the rupture lat

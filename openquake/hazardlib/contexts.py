@@ -776,11 +776,14 @@ class RuptureContext(BaseContext):
         lst = []
         for k, v in vars(self).items():
             if k in KNOWN_DISTANCES:
-                lst.append(v[0])
+                if not numpy.isnan(v[0]):
+                    lst.append(int(v[0]))
             elif k in KNOWN_SITE_PARAMS:
-                lst.append(v[0])
+                if not numpy.isnan(v[0]):
+                    lst.append(v[0])
             elif k in KNOWN_RUP_PARAMS:
-                lst.append(v)
+                if not numpy.isnan(v):
+                    lst.append(v)
         return tuple(lst)
 
     def get_mean_std(self, imts, gsims):

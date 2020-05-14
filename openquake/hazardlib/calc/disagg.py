@@ -109,12 +109,17 @@ def _eps3(truncation_level, n_epsilons):
 
 
 def get_mean_std(ctxs, gsims, imt):
+    """
+    :returns: array with shape (2, U, G), computed using a cache
+    """
     cache = {}  # key -> array of shape (2, G)
     mean_std = numpy.zeros((2, len(ctxs), len(gsims)), numpy.float32)
+    hits = 0
     for u, ctx in enumerate(ctxs):
         key = ctx.get_key()
         try:
             mean_std[:, u] = cache[key]
+            hits += 1
         except KeyError:
             mean_std[:, u] = cache[key] = \
                 ctx.get_mean_std([imt], gsims).reshape(2, -1)

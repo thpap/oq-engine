@@ -502,10 +502,6 @@ class PmapMaker(object):
         if pmap is None:  # for src_indep
             pmap = self.pmap
         for ctx in ctxs:
-            # initialize the pmap
-            for sid in ctx.sids:
-                for grp_id in ctx.grp_ids:
-                    pmap[grp_id].setdefault(sid, self.rup_indep)
             # this must be fast since it is inside an inner loop
             with self.gmf_mon:
                 # shape (2, N, M, G)
@@ -527,6 +523,9 @@ class PmapMaker(object):
                 sids, pnes = ctx.sids[ok], pnes[ok]
                 for grp_id in ctx.grp_ids:
                     p = pmap[grp_id]
+                    # initialize the pmap
+                    for sid in sids:
+                        p.setdefault(sid, self.rup_indep)
                     if self.rup_indep:
                         for sid, pne in zip(sids, pnes):
                             p[sid].array *= pne
@@ -872,7 +871,7 @@ class RuptureContext(BaseContext):
             # `p(k|T)` is given by the attribute probs_occur and
             # `p(X<x|rup)` is computed as ``1 - poes``.
             prob_no_exceed = numpy.array(
-                [v * ((1 - poes) ** i)
+                [v * (1 - poes) ** i
                  for i, v in enumerate(self.probs_occur)]).sum(axis=0)
             return numpy.clip(prob_no_exceed, 0., 1.)  # avoid numeric issues
 

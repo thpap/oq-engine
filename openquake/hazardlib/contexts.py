@@ -522,7 +522,8 @@ class PmapMaker(object):
             with self.pne_mon:
                 # pnes and poes of shape (N, L, G)
                 pnes = ctx.get_probability_no_exceedance(poes)
-                ok = pnes.sum(axis=(1, 2)) != LG  # prob_no_exceedance != 1
+                s = pnes.sum(axis=(1, 2))
+                ok = s < LG - 1E-10  # == LG only if prob_no_exc==1
                 sids, pnes = ctx.sids[ok], pnes[ok]
                 for grp_id in ctx.grp_ids:
                     p = pmap[grp_id]

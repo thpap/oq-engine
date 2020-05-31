@@ -158,6 +158,7 @@ class ContextMaker(object):
         self.gsims = gsims
         self.maximum_distance = (
             param.get('maximum_distance') or IntegrationDistance({}))
+        self.minimum_poe = param.get('minimum_poe', 0)
         self.trunclevel = param.get('truncation_level')
         self.effect = param.get('effect')
         for req in self.REQUIRES:
@@ -497,11 +498,12 @@ class PmapMaker(object):
             yield ctx
 
     def _update_pmap(self, ctxs, pmap=None):
-        LG = self.L * self.G
         # compute PoEs and update pmap
         if pmap is None:  # for src_indep
             pmap = self.pmap
         for ctx in ctxs:
+            if ctx.get_max_poe() < self.minimum_poe:  # too unlikely
+                continue
             # this must be fast since it is inside an inner loop
             with self.gmf_mon:
                 # shape (2, N, M, G)
@@ -515,12 +517,11 @@ class PmapMaker(object):
                             # set by the engine when parsing the gsim logictree
                             # when 0 ignore the gsim: see _build_trts_branches
                             poes[:, ll(imt), g] = 0
+            max_poes = ctx.get_max_poe(poes.max(axis=(1, 2)))  # shape N
+            ok = max_poes > self.minimum_poe
             with self.pne_mon:
-                # pnes and poes of shape (N, L, G)
+                sids, poes = ctx.sids[ok], poes[ok]  # shape N'
                 pnes = ctx.get_probability_no_exceedance(poes)
-                s = pnes.sum(axis=(1, 2))
-                ok = s < LG - 1E-10  # == LG only if prob_no_exc==1
-                sids, pnes = ctx.sids[ok], pnes[ok]
                 for grp_id in ctx.grp_ids:
                     p = pmap[grp_id]
                     # initialize the pmap
@@ -878,6 +879,12 @@ class RuptureContext(BaseContext):
         # parametric rupture
         tom = self.temporal_occurrence_model
         return tom.get_probability_no_exceedance(self.occurrence_rate, poes)
+
+    def get_max_poe(self, poe=1.):
+        """
+        :returns: the maximum probability of exceedance
+        """
+        return 1. - self.get_probability_no_exceedance(poe)
 
 
 class Effect(object):

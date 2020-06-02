@@ -501,6 +501,7 @@ class PmapMaker(object):
         # compute PoEs and update pmap
         if pmap is None:  # for src_indep
             pmap = self.pmap
+        print('===========', len(ctxs))
         for ctx in ctxs:
             if ctx.get_max_poe() < self.minimum_poe:  # too unlikely
                 continue
@@ -510,6 +511,7 @@ class PmapMaker(object):
                 mean_std = ctx.get_mean_std(self.imts, self.gsims)
             with self.poe_mon:
                 ll = self.loglevels
+                max_poes = base._get_max_poes(mean_std, ll, self.trunclevel)
                 poes = base.get_poes(mean_std, ll, self.trunclevel, self.gsims)
                 for g, gsim in enumerate(self.gsims):
                     for m, imt in enumerate(ll):

@@ -179,7 +179,7 @@ def get_poes(mean_std, loglevels, truncation_level, gsims=()):
                 for fact, wgt in zip(
                         gsim.kwargs["mixture_model"]["factors"],
                         gsim.kwargs["mixture_model"]["weights"]):
-                    mean_stdi = numpy.array(mean_std[:, :, :, g]) # make a copy
+                    mean_stdi = numpy.array(mean_std[:, :, :, g])  # make a copy
                     mean_stdi[1] *= fact
                     arr[:, :, g] += (wgt * _get_poes(mean_stdi, loglevels, tl,
                                                      squeeze=1))
@@ -195,7 +195,7 @@ def get_poes(mean_std, loglevels, truncation_level, gsims=()):
 # this is the critical function for the performance of the classical calculator
 # it is dominated by memory allocations (i.e. _truncnorm_sf is ultra-fast)
 # the only way to speedup is to reduce the maximum_distance, then the array
-# will become shorted in the N dimension (number of affected sites)
+# will become shorter in the N dimension (number of affected sites)
 def _get_poes(mean_std, loglevels, truncation_level, squeeze=False):
     mean, stddev = mean_std  # shape (N, M, G) each
     N, L, G = len(mean), len(loglevels.array), mean.shape[-1]
@@ -209,6 +209,24 @@ def _get_poes(mean_std, loglevels, truncation_level, squeeze=False):
                 out[:, lvl] = (iml - mean[:, m]) / stddev[:, m]
             lvl += 1
     return _truncnorm_sf(truncation_level, out)
+
+
+def _get_max_poes(mean_std, loglevels, truncation_level):
+    # return array of shape N
+    L, M = len(loglevels.array), len(loglevels)
+    minloglevels = loglevels.array[numpy.arange(0, L, L // M)]  # shape M
+    mean, stddev = mean_std  # shape (N, M, G) each
+    N = len(mean)
+    inp = numpy.zeros((N, M))
+    for m, iml in enumerate(minloglevels):
+        # the min is taken on the GSIM axis here
+        if truncation_level == 0:  # just compare imls to mean
+            inp[:, m] = (iml <= mean[:, m]).min(axis=1)
+        else:
+            inp[:, m] = ((iml - mean[:, m]) / stddev[:, m]).min(axis=1)
+    # _truncnorm_sf is decreasing from 1 to 0, so the minimum input
+    # give the maximum poes; the min is taken on the IMT axis here
+    return _truncnorm_sf(truncation_level, inp.min(axis=1))
 
 
 class MetaGSIM(abc.ABCMeta):

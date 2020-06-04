@@ -861,8 +861,8 @@ class RuptureContext(BaseContext):
             #
             # `p(k|T)` is given by the attribute probs_occur and
             # `p(X<x|rup)` is computed as ``1 - poes``.
-            prob_no_exceed = numpy.array(
-                [v * ((1 - poes) ** i)
+            prob_no_exceed = F32(
+                [v * (1 - poes) ** i
                  for i, v in enumerate(self.probs_occur)]).sum(axis=0)
             return numpy.clip(prob_no_exceed, 0., 1.)  # avoid numeric issues
 

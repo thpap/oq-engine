@@ -179,10 +179,7 @@ class Extract(dict):
         return decorator
 
     def __call__(self, dstore, key):
-        if '/' in key:
-            k, v = key.split('/', 1)
-            data = self[k](dstore, v)
-        elif '?' in key:
+        if '?' in key:
             k, v = key.split('?', 1)
             data = self[k](dstore, v)
         elif key in self:

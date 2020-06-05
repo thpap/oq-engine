@@ -24,7 +24,6 @@ from openquake.baselib import datastore, hdf5
 from openquake.commonlib.writers import write_csv
 from openquake.commonlib import util
 from openquake.calculators.views import view, rst_table
-from openquake.calculators.extract import extract
 
 
 def str_or_int(calc_id):
@@ -66,12 +65,6 @@ def show(what='contents', calc_id=-1, extra=()):
     # this part is experimental
     if view.keyfunc(what) in view:
         print(view(what, ds))
-    elif what.split('/', 1)[0] in extract:
-        obj = extract(ds, what, *extra)
-        if hasattr(obj, 'dtype') and obj.dtype.names:
-            print(write_csv(io.BytesIO(), obj).decode('utf8'))
-        else:
-            print(obj)
     elif what in ds:
         obj = ds.getitem(what)
         if hasattr(obj, 'items'):  # is a group of datasets

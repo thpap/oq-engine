@@ -21,6 +21,7 @@ import os
 import re
 import gzip
 import getpass
+import logging
 import itertools
 import collections
 import numpy
@@ -358,6 +359,9 @@ class DataStore(collections.abc.MutableMapping):
         :param attrs: dictionary of attributes of the dataset
         :returns: a HDF5 dataset
         """
+        if key in self.hdf5:
+            logging.warning('%s exists already in %s', key, self.hdf5.filename)
+            return
         return hdf5.create(
             self.hdf5, key, dtype, shape, compression, fillvalue, attrs)
 

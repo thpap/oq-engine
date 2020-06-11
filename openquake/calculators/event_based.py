@@ -444,10 +444,9 @@ class EventBasedCalculator(base.HazardCalculator):
             job_id = logs.init('job')
             oq.calculation_mode = 'classical'
             self.cl = ClassicalCalculator(oq, job_id)
-            # TODO: perhaps it is possible to avoid reprocessing the source
-            # model, however usually this is quite fast and do not dominate
-            # the computation
-            self.cl.run()
+            vars(self.cl).update(vars(self))
+            self.cl.run(pre_execute=False)
+
             engine.expose_outputs(self.datastore)
             for imt in oq.imtls:
                 cl_mean_curves = get_mean_curves(self.datastore, imt)

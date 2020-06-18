@@ -71,12 +71,10 @@ def compute_gmfs(rupgetter, srcfilter, param, monitor):
     return getter.compute_gmfs_curves(param.get('rlz_by_event'), monitor)
 
 
-@base.calculators.add('event_based', 'ucerf_hazard')
-class EventBasedCalculator(base.HazardCalculator):
+class EventBasedFromRuptures(base.HazardCalculator):
     """
     Event based PSHA calculator generating the ground motion fields and
-    the hazard curves from the ruptures, depending on the configuration
-    parameters.
+    the hazard curves from the ruptures.
     """
     core_task = compute_gmfs
     is_stochastic = True
@@ -203,16 +201,8 @@ class EventBasedCalculator(base.HazardCalculator):
 
     def execute(self):
         oq = self.oqparam
-        self.set_param()
         self.offset = 0
         self.indices = AccumDict(accum=[])  # sid, idx -> indices
-        if oq.hazard_calculation_id:  # from ruptures
-            self.datastore.parent = util.read(oq.hazard_calculation_id)
-        else:  # from sources
-            self.build_events_from_sources()
-            if (oq.ground_motion_fields is False and
-                    oq.hazard_curves_from_gmfs is False):
-                return {}
         if not oq.imtls:
             raise InvalidFile('There are no intensity measure types in %s' %
                               oq.inputs['job_ini'])
@@ -359,3 +349,23 @@ class EventBasedCalculator(base.HazardCalculator):
                 logging.warning('Relative difference with the classical '
                                 'mean curves: %d%% at site index %d, imt=%s',
                                 self.rdiff * 100, index, imt)
+
+
+@base.calculators.add('event_based', 'ucerf_hazard')
+class EventBasedCalculator(EventBasedFromRuptures):
+    """
+    Event based PSHA calculator generating the ground motion fields and
+    the hazard curves from sources or ruptures.
+    """
+
+    def execute(self):
+        oq = self.oqparam
+        self.set_param()
+        if oq.hazard_calculation_id:  # from ruptures
+            self.datastore.parent = util.read(oq.hazard_calculation_id)
+        else:  # from sources
+            self.build_events_from_sources()
+            if (oq.ground_motion_fields is False and
+                    oq.hazard_curves_from_gmfs is False):
+                return {}
+        return super().execute()

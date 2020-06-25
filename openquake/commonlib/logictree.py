@@ -303,6 +303,11 @@ class SourceModelLogicTree(object):
             self.parse_branchset(bsnode, depth)
         dt = time.time() - t0
         bname = os.path.basename(self.filename)
+        import pdb; pdb.set_trace()
+        if hasattr(self, 'called'):
+            raise RuntimeError
+        else:
+            self.__class__.called = True
         logging.info('Validated %s in %.2f seconds', bname, dt)
 
     def parse_branchset(self, branchset_node, depth):

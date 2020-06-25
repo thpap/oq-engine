@@ -100,30 +100,6 @@ def del_calculation(job_id, confirmed=False):
                 print(resp['error'])
 
 
-def smart_run(job_ini, oqparam, log_level, log_file, exports,
-              reuse_hazard, **params):
-    """
-    Run calculations by storing their hazard checksum and reusing previous
-    calculations if requested.
-    """
-    haz_checksum = readinput.get_checksum32(oqparam)
-    # retrieve an old calculation with the right checksum, if any
-    job = logs.dbcmd('get_job_from_checksum', haz_checksum)
-    reuse = reuse_hazard and job and os.path.exists(job.ds_calc_dir + '.hdf5')
-    # recompute the hazard and store the checksum
-    if not reuse:
-        hc_id = run_job(job_ini, log_level, log_file, exports, **params)
-        if job is None:
-            logs.dbcmd('add_checksum', hc_id, haz_checksum)
-        elif not reuse_hazard or not os.path.exists(job.ds_calc_dir + '.hdf5'):
-            logs.dbcmd('update_job_checksum', hc_id, haz_checksum)
-    else:
-        hc_id = job.id
-        logging.info('Reusing job #%d', job.id)
-        run_job(job_ini, log_level, log_file,
-                exports, hazard_calculation_id=hc_id, **params)
-
-
 @sap.Script  # do not use sap.script, other oq engine will break
 def engine(log_file, no_distribute, yes, config_file, make_html_report,
            upgrade_db, db_version, what_if_I_upgrade, run,
@@ -201,8 +177,8 @@ def engine(log_file, no_distribute, yes, config_file, make_html_report,
             logs.init('nojob', getattr(logging, log_level.upper()))
             # not using logs.handle that logs on the db
             oq = readinput.get_oqparam(job_inis[0])
-            smart_run(job_inis[0], oq, log_level, log_file,
-                      exports, reuse_hazard, **pars)
+            run_job(job_inis[0], oq, log_level, log_file,
+                    exports, reuse_hazard, **pars)
             return
         for i, job_ini in enumerate(job_inis):
             open(job_ini, 'rb').read()  # IOError if the file does not exist

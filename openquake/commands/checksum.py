@@ -43,11 +43,13 @@ def checksum(thing):
         dstore = util.read(job_id)
         checksum = dstore['/'].attrs['checksum32']
     elif job_file.endswith('.xml'):  # assume it is a smlt file
-        inputs = {'source_model_logic_tree': job_file}
-        checksum = readinput.get_checksum32(mock.Mock(inputs=inputs))
+        oq = mock.Mock(inputs={'source_model_logic_tree': job_file})
+        full_lt = readinput.get_full_lt(oq)
+        checksum = readinput.get_checksum32(oq, full_lt)
     else:
         oq = readinput.get_oqparam(job_file)
-        checksum = readinput.get_checksum32(oq)
+        full_lt = readinput.get_full_lt(oq)
+        checksum = readinput.get_checksum32(oq, full_lt)
     print(checksum)
 
 

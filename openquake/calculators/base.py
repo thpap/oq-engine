@@ -197,9 +197,6 @@ class BaseCalculator(metaclass=abc.ABCMeta):
         attrs = self.datastore['/'].attrs
         attrs['engine_version'] = engine_version
         attrs['date'] = datetime.now().isoformat()[:19]
-        if 'checksum32' not in attrs:
-            attrs['checksum32'] = readinput.get_checksum32(self.oqparam)
-            logging.info('Checksum of the input files: %(checksum32)s', attrs)
         self.datastore.flush()
 
     def check_precalc(self, precalc_mode):
@@ -301,7 +298,7 @@ class BaseCalculator(metaclass=abc.ABCMeta):
         Gzipping the inputs and saving them in the datastore
         """
         logging.info('gzipping the input files')
-        fnames = readinput.get_input_files(self.oqparam)
+        fnames = readinput.get_input_files(self.oqparam, self.csm.full_lt)
         self.datastore.store_files(fnames)
 
     def export(self, exports=None):

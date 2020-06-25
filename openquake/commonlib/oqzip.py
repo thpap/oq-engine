@@ -98,7 +98,8 @@ def zip_job(job_ini, archive_zip='', risk_ini='', oq=None, log=logging.info):
         risk_inputs = readinput.get_params([risk_ini])['inputs']
         del risk_inputs['job_ini']
         oq.inputs.update(risk_inputs)
-    files = readinput.get_input_files(oq)
+    full_lt = readinput.get_full_lt(oq)
+    files = readinput.get_input_files(oq, full_lt)
     if risk_ini:
         files = [risk_ini] + files
     return general.zipfiles(files, archive_zip, log=log)

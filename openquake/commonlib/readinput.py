@@ -703,7 +703,7 @@ def _get_csm_cached(oq, full_lt, h5=None):
     # read the composite source model from the cache
     if not os.path.exists(oq.csm_cache):
         os.makedirs(oq.csm_cache)
-    checksum = get_checksum32(oq)
+    checksum = get_checksum32(oq, full_lt)
     if h5:
         h5.attrs['checksum32'] = checksum
     fname = os.path.join(oq.csm_cache, '%s.pik' % checksum)
@@ -1048,9 +1048,10 @@ def reduce_source_model(smlt_file, source_ids, remove=True):
     return good, total
 
 
-def get_input_files(oqparam, hazard=False):
+def get_input_files(oqparam, full_lt, hazard=False):
     """
     :param oqparam: an OqParam instance
+    :param full_lt: full logic tree
     :param hazard: if True, consider only the hazard files
     :returns: input path names in a specific order
     """
@@ -1062,7 +1063,7 @@ def get_input_files(oqparam, hazard=False):
             continue
         # collect .hdf5 tables for the GSIMs, if any
         elif key == 'gsim_logic_tree':
-            gsim_lt = get_gsim_lt(oqparam)
+            gsim_lt = full_lt.gsim_lt
             for gsims in gsim_lt.values.values():
                 for gsim in gsims:
                     for k, v in gsim.kwargs.items():
@@ -1087,7 +1088,7 @@ def get_input_files(oqparam, hazard=False):
                                       (oqparam.inputs['job_ini'], key))
             fnames.update(fname)
         elif key == 'source_model_logic_tree':
-            smlt = logictree.SourceModelLogicTree(fname)
+            smlt = full_lt.source_model_lt
             fnames.update(smlt.hdf5_files)
             fnames.update(smlt.info.smpaths)
             fnames.add(fname)
@@ -1109,7 +1110,7 @@ def _checksum(fname, checksum):
     return zlib.adler32(data, checksum)
 
 
-def get_checksum32(oqparam):
+def get_checksum32(oqparam, full_lt):
     """
     Build an unsigned 32 bit integer from the hazard input files
 
@@ -1118,7 +1119,7 @@ def get_checksum32(oqparam):
     # NB: using adler32 & 0xffffffff is the documented way to get a checksum
     # which is the same between Python 2 and Python 3
     checksum = 0
-    for fname in get_input_files(oqparam, hazard=True):
+    for fname in get_input_files(oqparam, full_lt, hazard=True):
         checksum = _checksum(fname, checksum)
     hazard_params = []
     for key, val in vars(oqparam).items():

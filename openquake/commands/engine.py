@@ -106,7 +106,9 @@ def smart_run(job_ini, oqparam, log_level, log_file, exports,
     Run calculations by storing their hazard checksum and reusing previous
     calculations if requested.
     """
-    haz_checksum = readinput.get_checksum32(oqparam)
+    full_lt = readinput.get_full_lt(oqparam)
+    haz_checksum = readinput.get_checksum32(oqparam, full_lt)
+    logging.info('Checksum of the input files: %s', haz_checksum)
     # retrieve an old calculation with the right checksum, if any
     job = logs.dbcmd('get_job_from_checksum', haz_checksum)
     reuse = reuse_hazard and job and os.path.exists(job.ds_calc_dir + '.hdf5')

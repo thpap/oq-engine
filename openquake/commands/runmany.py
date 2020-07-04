@@ -15,11 +15,11 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with OpenQuake. If not, see <http://www.gnu.org/licenses/>.
-import logging
 import os.path
 import time
+import numpy
 
-from openquake.baselib import performance, sap, parallel, config
+from openquake.baselib import sap, parallel, config
 from openquake.commonlib import oqvalidation, logs
 from openquake.calculators import base
 from openquake.server import dbserver
@@ -29,39 +29,36 @@ oqvalidation.OqParam.calculation_mode.validator.choices = tuple(
 config.dbserver['receiver_ports'] = '1912-1940'
 
 
-def run(job_ini, calc_id, params, monitor=performance.Monitor()):
+def run(job_ini, calc_id):
+    t0 = time.time()
     print('Running %s #%d' % (job_ini, calc_id))
     os.environ['OQ_DISTRIBUTE'] = 'no'
     os.environ['OQ_SAMPLE_SITES'] = '.0005'
-    # set the logs first of all
-    # disable gzip_input
-    base.BaseCalculator.gzip_inputs = lambda self: None
-    base.get_calc(job_ini, calc_id).run(**params)
-    return {}
-
-
-PARAM = ('calculation_mode=preclassical,number_of_logic_tree_samples=10,'
-         'save_disk_space=1')
+    params = dict(calculation_mode='preclassical',
+                  number_of_logic_tree_samples=10,
+                  save_disk_space=True)
+    base.get_calc(job_ini, calc_id, params).run()
+    params['calculation_mode'] = 'event_based'
+    base.get_calc(job_ini, calc_id + 1, params).run()
+    return dict(calc_id=[calc_id, calc_id + 1], dt=time.time() - t0)
 
 
 @sap.script
-def runmany(job_inis, param=PARAM):
+def runmany(job_inis):
     """
-    Run multiple calculations bypassing the database layer
+    Run multiple calculations in parallel
     """
     dbserver.ensure_on()
-    if param:
-        params = oqvalidation.OqParam.check(
-            dict(p.split('=', 1) for p in param.split(',')))
-    else:
-        params = {}
-    calc_ids = [logs.init('job', logging.WARN) for _ in job_inis]
+    calc_id = logs.init()
+    calc_ids = calc_id + 1 + numpy.arange(0, len(job_inis) * 2, 2)
+    print('Running %s' % calc_ids)
     smap = parallel.Starmap(run)
     t0 = time.time()
     for job_ini, calc_id in zip(job_inis, calc_ids):
-        smap.submit((job_ini, calc_id, params))
+        smap.submit((job_ini, calc_id))
     try:
-        smap.reduce()
+        for dic in smap:
+            print(dic)
     finally:
         parallel.Starmap.shutdown()
     print('Finished in %d seconds' % (time.time() - t0))
@@ -69,4 +66,3 @@ def runmany(job_inis, param=PARAM):
 
 runmany.arg('job_inis', 'calculation configuration file '
             '(or files, space-separated)', nargs='+')
-runmany.arg('param', 'parameters in TOML format')

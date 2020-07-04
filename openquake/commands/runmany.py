@@ -17,7 +17,7 @@
 # along with OpenQuake. If not, see <http://www.gnu.org/licenses/>.
 import os.path
 import time
-import numpy
+import logging
 
 from openquake.baselib import sap, parallel, config
 from openquake.commonlib import oqvalidation, logs
@@ -29,18 +29,19 @@ oqvalidation.OqParam.calculation_mode.validator.choices = tuple(
 config.dbserver['receiver_ports'] = '1912-1940'
 
 
-def run(job_ini, calc_id):
+def run(job_ini, job1, job2):
     t0 = time.time()
-    print('Running %s #%d' % (job_ini, calc_id))
     os.environ['OQ_DISTRIBUTE'] = 'no'
     os.environ['OQ_SAMPLE_SITES'] = '.0005'
     params = dict(calculation_mode='preclassical',
                   number_of_logic_tree_samples=10,
                   save_disk_space=True)
-    base.get_calc(job_ini, calc_id, params).run()
+    with logs.handle(job1):
+        base.get_calc(job_ini, job1, params).run()
     params['calculation_mode'] = 'event_based'
-    base.get_calc(job_ini, calc_id + 1, params).run()
-    return dict(calc_id=[calc_id, calc_id + 1], dt=time.time() - t0)
+    with logs.handle(job2):
+        base.get_calc(job_ini, job2, params).run()
+    return dict(job_id=[job1, job2], dt=time.time() - t0)
 
 
 @sap.script
@@ -48,20 +49,18 @@ def runmany(job_inis):
     """
     Run multiple calculations in parallel
     """
-    dbserver.ensure_on()
-    calc_id = logs.init()
-    calc_ids = calc_id + 1 + numpy.arange(0, len(job_inis) * 2, 2)
-    print('Running %s' % calc_ids)
-    smap = parallel.Starmap(run)
     t0 = time.time()
-    for job_ini, calc_id in zip(job_inis, calc_ids):
-        smap.submit((job_ini, calc_id))
+    dbserver.ensure_on()
+    job_ids = [(logs.init('job'), logs.init('job')) for _ in job_inis]
+    smap = parallel.Starmap(run)
+    for job_ini, (job1, job2) in zip(job_inis, job_ids):
+        smap.submit((job_ini, job1, job2))
     try:
         for dic in smap:
-            print(dic)
+            logging.info('Finished %r' % dic)
     finally:
         parallel.Starmap.shutdown()
-    print('Finished in %d seconds' % (time.time() - t0))
+    logging.info('Finished in %d seconds' % (time.time() - t0))
 
 
 runmany.arg('job_inis', 'calculation configuration file '

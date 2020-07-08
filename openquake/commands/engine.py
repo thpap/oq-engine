@@ -65,7 +65,7 @@ def run_jobs(job_inis, log_level='info', log_file=None, exports='',
     """
     dist = parallel.oq_distribute()
     jobparams = []
-    qlen = config.distribution.serialize_jobs
+    qlen = len(job_inis)
     for job_ini in job_inis:
         # NB: the logs must be initialized BEFORE everything
         job_id = logs.init('job', getattr(logging, log_level.upper()))
@@ -76,15 +76,19 @@ def run_jobs(job_inis, log_level='info', log_file=None, exports='',
                 and 'hazard_calculation_id' not in kw):
             kw['hazard_calculation_id'] = job_id
         jobparams.append((job_id, oqparam))
-    if qlen == 1 and dist == 'zmq' and config.zworkers['host_cores']:
+    if dist == 'zmq' and config.zworkers['host_cores']:
         logging.info('Asking the DbServer to start the workers')
         logs.dbcmd('zmq_start')  # start the zworkers
         logs.dbcmd('zmq_wait')  # wait for them to go up
     allargs = [(job_id, oqparam, exports, log_level, log_file)
                for job_id, oqparam in jobparams]
-    for args in allargs:
-        eng.run_calc(*args)
-    if qlen == 1 and dist == 'zmq' and config.zworkers['host_cores']:
+    if qlen > 1 and 'csm_cache' in kw:
+        parallel.Starmap(eng.run_calc, allargs, distribute='processpool',
+                         num_cores=qlen).reduce()
+    else:
+        for args in allargs:
+            eng.run_calc(*args)
+    if dist == 'zmq' and config.zworkers['host_cores']:
         logs.dbcmd('zmq_stop')  # stop the zworkers
     if dist.startswith('celery'):
         eng.celery_cleanup(config.distribution.terminate_workers_on_revoke)

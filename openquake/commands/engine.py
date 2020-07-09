@@ -65,7 +65,7 @@ def run_jobs(job_inis, log_level='info', log_file=None, exports='',
     """
     dist = parallel.oq_distribute()
     jobparams = []
-    qlen = len(job_inis)
+    njobs = len(job_inis)
     for job_ini in job_inis:
         # NB: the logs must be initialized BEFORE everything
         job_id = logs.init('job', getattr(logging, log_level.upper()))
@@ -82,12 +82,13 @@ def run_jobs(job_inis, log_level='info', log_file=None, exports='',
         logs.dbcmd('zmq_wait')  # wait for them to go up
     allargs = [(job_id, oqparam, exports, log_level, log_file)
                for job_id, oqparam in jobparams]
-    if qlen > 1 and 'csm_cache' in kw:
+    if njobs > 1 and 'csm_cache' in kw:
         config.distribution.serialize_jobs = nc = parallel.CT // 2
         try:
             parallel.Starmap(eng.run_calc, allargs, distribute='processpool',
                              num_cores=nc).reduce()
         finally:
+            logging.info('Ran all %d jobs', njobs)
             parallel.Starmap.shutdown()
     else:
         for args in allargs:

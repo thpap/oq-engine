@@ -88,12 +88,15 @@ class Socket(object):
         self.running = False
 
     def bind_to_random_port(self, end_point, p1, p2):
+        first = True
         while True:
             try:
                 return self.zsocket.bind_to_random_port(end_point, p1, p2)
             except zmq.ZMQBindError:
-                logging.warning('No port available in the range %s_%s, '
-                                'waiting...', p1, p2)
+                if first:
+                    logging.warning('No port available in the range %s_%s, '
+                                    'waiting...', p1, p2)
+                    first = False
                 time.sleep(10)
 
     def __enter__(self):

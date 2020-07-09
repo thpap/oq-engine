@@ -17,6 +17,7 @@
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 import re
 import zmq
+import time
 import logging
 
 context = zmq.Context()
@@ -86,6 +87,15 @@ class Socket(object):
         self.timeout = timeout
         self.running = False
 
+    def bind_to_random_port(self, end_point, p1, p2):
+        while True:
+            try:
+                return self.zsocket.bind_to_random_port(end_point, p1, p2)
+            except zmq.ZMQBindError:
+                logging.warning('No port available in the range %s_%s, '
+                                'waiting...', p1, p2)
+                time.sleep(10)
+
     def __enter__(self):
         """Instantiate the underlying zmq socket"""
         # first check if the end_point ends in :<min_port>-<max_port>
@@ -95,9 +105,7 @@ class Socket(object):
             p1, p2 = map(int, port_range.groups())
             end_point = self.end_point.rsplit(':', 1)[0]  # strip port range
             self.zsocket = context.socket(self.socket_type)
-            port = self.zsocket.bind_to_random_port(end_point, p1, p2)
-            # NB: will raise a ZMQBindError if no port is available
-            self.port = port
+            self.port = self.bind_to_random_port(end_point, p1, p2)
         elif self.mode == 'bind':
             self.zsocket = bind(self.end_point, self.socket_type)
         else:  # connect

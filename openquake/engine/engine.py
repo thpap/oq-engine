@@ -329,12 +329,6 @@ def run_calc(job_id, oqparam, exports, log_level='info', log_file=None, **kw):
         calc.from_engine = True
         tb = 'None\n'
         try:
-            poll_queue(job_id, _PID, poll_time=15)
-        except BaseException:
-            # the job aborted even before starting
-            logs.dbcmd('finish', job_id, 'aborted')
-            return
-        try:
             if OQ_DISTRIBUTE.endswith('pool'):
                 logging.warning('Using %d cores on %s',
                                 parallel.CT // 2, platform.node())

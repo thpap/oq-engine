@@ -641,7 +641,9 @@ class Starmap(object):
     @classmethod
     def init(cls, poolsize=None, distribute=None):
         cls.distribute = distribute or oq_distribute()
-        if cls.distribute == 'processpool' and not hasattr(cls, 'pool'):
+        if cls.distribute == 'no':
+            return
+        elif cls.distribute == 'processpool' and not hasattr(cls, 'pool'):
             # unregister custom handlers before starting the processpool
             term_handler = signal.signal(signal.SIGTERM, signal.SIG_DFL)
             int_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)

@@ -84,7 +84,7 @@ def run_jobs(job_inis, log_level='info', log_file=None, exports='',
                for job_id, oqparam in jobparams]
     if qlen > 1 and 'csm_cache' in kw:
         parallel.Starmap(eng.run_calc, allargs, distribute='processpool',
-                         num_cores=qlen).reduce()
+                         num_cores=parallel.CT // 2).reduce()
     else:
         for args in allargs:
             eng.run_calc(*args)

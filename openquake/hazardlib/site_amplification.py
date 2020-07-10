@@ -92,14 +92,13 @@ class KernelAmplifier(object):
         df = df[df['from_mag'] == self.mags[idx]]
 
         # Filtering distance
-        tmp_dsts = numpy.array(sorted(df['from_rrup']))
-        idx = numpy.argmin((tmp_dsts - dst) > 0)
-        df = df[df['from_rrup'] == tmp_dsts[idx]]
+        rrups = numpy.sort(df['from_rrup'])
+        idx = numpy.argmin((rrups - dst) > 0)
+        df = df[df['from_rrup'] == rrups[idx]]
 
         # Interpolating
         median = numpy.interp(iml, df['level'], df['median'])
         std = numpy.interp(iml, df['level'], df['std'])
-
         return median, std
 
     def get_max_sigma(self):

@@ -15,8 +15,6 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
-
-import copy
 import numpy
 import pandas as pd
 
@@ -27,6 +25,14 @@ from openquake.hazardlib.probability_map import ProbabilityCurve
 from openquake.commonlib.oqvalidation import check_same_levels
 
 
+def left_value(a, v):
+    """
+    If a is a sorted array of floats and v is a value, return the
+    maximum float below v from the array
+    """
+    return a[numpy.searchsorted(a, v) - 1]
+
+
 class KernelAmplifier(object):
     """
     Class for managing amplification functions
@@ -35,7 +41,8 @@ class KernelAmplifier(object):
         A :class:`pandas.DataFrame` instance
     """
     def __init__(self, df):
-        self.mags = numpy.unique(df['from_mag'])
+        self.mags = numpy.sort(numpy.unique(df['from_mag']))
+        self.rrups = numpy.sort(numpy.unique(df['from_rrup']))
         self.df = df
 
     @classmethod
@@ -84,17 +91,12 @@ class KernelAmplifier(object):
             A tuple with the median amplification factor and the std of the
             logarithm
         """
-        df = self.df
-        df = df[(df['ampcode'] == ampcode) & (df['imt'] == imt)]
+        # Filtering ampcode and imt
+        df = self.df[(self.df['ampcode'] == ampcode) & (self.df['imt'] == imt)]
 
-        # Filtering magnitude
-        idx = numpy.argmin((self.mags - mag) > 0)
-        df = df[df['from_mag'] == self.mags[idx]]
-
-        # Filtering distance
-        rrups = numpy.sort(df['from_rrup'])
-        idx = numpy.argmin((rrups - dst) > 0)
-        df = df[df['from_rrup'] == rrups[idx]]
+        # Filtering magnitude and distance
+        df = df[df['from_mag'] == left_value(self.mags, mag)]
+        df = df[df['from_rrup'] == float(left_value(self.rrups, dst))]
 
         # Interpolating
         median = numpy.interp(iml, df['level'], df['median'])

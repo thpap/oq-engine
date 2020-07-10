@@ -28,7 +28,12 @@ from openquake.commonlib.oqvalidation import check_same_levels
 def left_value(a, v):
     """
     If a is a sorted array of floats and v is a value, return the
-    maximum float below v from the array
+    maximum float below v from the array. For instance
+
+    >>> left_value([4, 5.5], 5.1)
+    4
+    >>> left_value([0, 20], 160)
+    20
     """
     return a[numpy.searchsorted(a, v) - 1]
 

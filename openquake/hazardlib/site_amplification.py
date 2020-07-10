@@ -16,7 +16,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 
-import re
 import copy
 import numpy
 import pandas as pd
@@ -28,62 +27,49 @@ from openquake.hazardlib.probability_map import ProbabilityCurve
 from openquake.commonlib.oqvalidation import check_same_levels
 
 
-class AmplFunction():
+class KernelAmplifier(object):
     """
-    Class for managing an amplification function DataFrame.
+    Class for managing amplification functions
 
     :param df:
         A :class:`pandas.DataFrame` instance
-    :param soil:
-        A string with the code of the site to be used
     """
-
-    def __init__(self, df, soil=None):
-        # If the function is used only for one soil type, then we filter out
-        # the other soil typologies
-        if soil is not None:
-            df = df[df['ampcode'] == soil]
-        if 'from_mag' in df.keys():
-            self.mags = numpy.unique(df['from_mag'])
+    def __init__(self, df):
+        self.mags = numpy.unique(df['from_mag'])
         self.df = df
 
     @classmethod
-    def from_dframe(cls, df, soil=None):
+    def from_dframe(cls, df):
         """
         :param df:
             A :class:`pandas.DataFrame` instance
-        :param soil:
-            A string
         :returns:
-            A :class:`openquake.hazardlib.site_amplification.AmplFunction`
+            A :class:`openquake.hazardlib.site_amplification.KernelAmplifier`
             instance
         """
-        # Get IMTs
-        imts = []
         # example of df.keys():
         # ampcode  from_mag  from_rrup  level  PGA sigma_PGA
-        for key in df.keys():
-            if re.search('^SA', key) or re.search('^PGA', key):
-                imts.append(key)
+        imts = [key for key in df.keys() if key.startswith(('PGA', 'SA'))]
 
         # Create the temporary list of lists
         out = []
-        for _, row in df.reset_index().iterrows():
-            for imt in imts:
-                out.append([row['ampcode'], row['from_mag'], row['from_rrup'],
-                            row['level'], imt, row[imt], row['sigma_' + imt]])
+        for imt in imts:
+            for ampcode, mag, rrup, level, med, std in zip(
+                    df.index, df['from_mag'], df['from_rrup'], df['level'],
+                    df[imt], df['sigma_' + imt]):
+                out.append([ampcode, mag, rrup, level, imt, med, std])
 
         # Create the dataframe
         dtypes = {'ampcode': ampcode_dt, 'from_mag': float,
                   'from_rrup': float, 'level': float, 'imt': str,
                   'median': float, 'std': float}
         df = pd.DataFrame(out, columns=dtypes).astype(dtypes)
-        return AmplFunction(df, soil)  # requires reset_index
+        return cls(df)
 
-    def get_mean_std(self, site, imt, iml, mag, dst):
+    def get_mean_std(self, ampcode, imt, iml, mag, dst):
         """
-        :param site:
-            A string specifying the site
+        :param ampcode:
+            A string specifying the ampcode
         :param imt:
             A string specifying the intensity measure type e.g. 'PGA' or
             'SA(1.0)'
@@ -98,8 +84,8 @@ class AmplFunction():
             A tuple with the median amplification factor and the std of the
             logarithm
         """
-        df = copy.copy(self.df)
-        df = df[(df['ampcode'] == site) & (df['imt'] == imt)]
+        df = self.df
+        df = df[(df['ampcode'] == ampcode) & (df['imt'] == imt)]
 
         # Filtering magnitude
         idx = numpy.argmin((self.mags - mag) > 0)
@@ -121,7 +107,7 @@ class AmplFunction():
         :returns:
             The maximum sigma value in the amplification function
         """
-        return max(self.df['std'])
+        return self.df['std'].max()
 
 
 def check_unique(df, kfields, fname):

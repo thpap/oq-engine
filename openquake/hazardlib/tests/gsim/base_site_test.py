@@ -30,7 +30,7 @@ from openquake.hazardlib.gsim.boore_atkinson_2008 import BooreAtkinson2008
 from openquake.hazardlib.gsim.boore_2014 import BooreEtAl2014
 
 from openquake.hazardlib.site import ampcode_dt
-from openquake.hazardlib.site_amplification import AmplFunction
+from openquake.hazardlib.site_amplification import KernelAmplifier
 from openquake.hazardlib.tests.site_amplification_function_test import ampl_func
 
 
@@ -43,7 +43,7 @@ class GetPoesSiteTestCase(unittest.TestCase):
         fname = gettemp(ampl_func)
         df = read_csv(fname, {'ampcode': ampcode_dt, None: numpy.float64},
                       index='ampcode')
-        self.df = AmplFunction(df)
+        self.df = KernelAmplifier(df)
 
         # Set GMMs
         gmmA = BooreAtkinson2008()
@@ -72,7 +72,7 @@ class GetPoesSiteTestCase(unittest.TestCase):
         fname = gettemp(ampl_func)
         df = read_csv(fname, {'ampcode': ampcode_dt, None: numpy.float64},
                       index='ampcode')
-        af = AmplFunction.from_dframe(df)
+        af = KernelAmplifier.from_dframe(df)
 
         truncation_level = 3
         sitecode = b'A'

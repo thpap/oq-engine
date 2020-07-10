@@ -35,7 +35,7 @@ from openquake.baselib.performance import Monitor, init_performance
 from openquake.hazardlib import InvalidFile, site
 
 from openquake.hazardlib.site_amplification import Amplifier
-from openquake.hazardlib.site_amplification import AmplFunction
+from openquake.hazardlib.site_amplification import KernelAmplifier
 
 from openquake.hazardlib.calc.filters import SourceFilter
 from openquake.hazardlib.source import rupture
@@ -459,7 +459,7 @@ class HazardCalculator(BaseCalculator):
             logging.info('Reading %s', oq.inputs['amplification'])
             df = readinput.get_amplification(oq)
             check_amplification(df, self.sitecol)
-            self.af = AmplFunction.from_dframe(df)
+            self.af = KernelAmplifier.from_dframe(df)
 
         if getattr(self, 'sitecol', None):
             # can be None for the ruptures-only calculator
@@ -815,7 +815,7 @@ class HazardCalculator(BaseCalculator):
                 # TODO: need to add additional checks on the main calculation
                 # methodology since the kernel method is currently tested only
                 # for classical PSHA
-                self.af = AmplFunction.from_dframe(df)
+                self.af = KernelAmplifier.from_dframe(df)
                 self.amplifier = None
         else:
             self.amplifier = None

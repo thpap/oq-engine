@@ -23,7 +23,7 @@ from openquake.baselib import InvalidFile
 from openquake.baselib.hdf5 import read_csv
 from openquake.baselib.general import gettemp, DictArray
 from openquake.hazardlib.site import ampcode_dt
-from openquake.hazardlib.site_amplification import AmplFunction
+from openquake.hazardlib.site_amplification import KernelAmplifier
 
 ampl_func = '''\
 #,,,,,,,"vs30_ref=760"
@@ -85,7 +85,7 @@ class AmplificationFunctionTestCase(unittest.TestCase):
         fname = gettemp(ampl_func)
         df = read_csv(fname, {'ampcode': ampcode_dt, None: numpy.float64},
                       index='ampcode')
-        self.af = AmplFunction.from_dframe(df)
+        self.af = KernelAmplifier.from_dframe(df)
 
     def test_get_max_sigma(self):
         """ Calculation of mmax """

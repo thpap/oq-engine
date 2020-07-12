@@ -91,7 +91,17 @@ def _iml4(rlzs, iml_disagg, imtls, poes_disagg, curves):
     return hdf5.ArrayWrapper(arr, {'rlzs': rlzs})
 
 
-def _prepare_ctxs(rupdata, cmaker, tile):
+def _prepare_ctxs(dstore, idxs, cmaker, tile):
+    dstore.open('r')
+    # NB: using dstore['rup/' + k][idxs] would be ultraslow!
+    a, b = idxs.min(), idxs.max() + 1
+    rupdata = {}
+    slc = slice(tile.sids[0], tile.sids[-1] + 1)
+    for k in dstore['rup']:
+        if k.endswith('_'):  # distance parameters
+            rupdata[k] = dstore['rup/' + k][a:b][idxs-a, slc]
+        else:
+            rupdata[k] = dstore['rup/' + k][a:b][idxs-a]
     ctxs = []
     for u in range(len(rupdata['mag'])):
         ctx = RuptureContext()
@@ -136,18 +146,7 @@ def compute_disagg(dstore, tile, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
     RuptureContext.temporal_occurrence_model = PoissonTOM(
         oq.investigation_time)
     with monitor('reading rupdata', measuremem=True):
-        dstore.open('r')
-        # NB: using dstore['rup/' + k][idxs] would be ultraslow!
-        a, b = idxs.min(), idxs.max() + 1
-        rupdata = {}
-        slc = slice(tile.sids[0], tile.sids[-1] + 1)
-        for k in dstore['rup']:
-            if k.endswith('_'):  # distance parameters
-                rupdata[k] = dstore['rup/' + k][a:b][idxs-a, slc]
-            else:
-                rupdata[k] = dstore['rup/' + k][a:b][idxs-a]
-        ctxs = _prepare_ctxs(rupdata, cmaker, tile)  # ultra-fast
-        del rupdata
+        ctxs = _prepare_ctxs(dstore, idxs, cmaker, tile)
         close = numpy.array([ctx.rrup < 9999. for ctx in ctxs]).T  # (N, U)
 
     dis_mon = monitor('disaggregate', measuremem=False)

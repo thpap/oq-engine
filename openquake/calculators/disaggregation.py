@@ -94,14 +94,13 @@ def _iml4(rlzs, iml_disagg, imtls, poes_disagg, curves):
 def _prepare_ctxs(dstore, idxs, cmaker, tile):
     dstore.open('r')
     # NB: using dstore['rup/' + k][idxs] would be ultraslow!
-    a, b = idxs.min(), idxs.max() + 1
     rupdata = {}
     slc = slice(tile.sids[0], tile.sids[-1] + 1)
     for k in dstore['rup']:
         if k.endswith('_'):  # distance parameters
-            rupdata[k] = dstore['rup/' + k][a:b][idxs-a, slc]
+            rupdata[k] = dstore['rup/' + k][:, slc][idxs]
         else:
-            rupdata[k] = dstore['rup/' + k][a:b][idxs-a]
+            rupdata[k] = dstore['rup/' + k][:][idxs]
     ctxs = []
     for u in range(len(rupdata['mag'])):
         ctx = RuptureContext()

@@ -401,7 +401,7 @@ class DisaggregationCalculator(base.HazardCalculator):
         sd = self.shapedic.copy()
         sd.pop('trt')
         sd.pop('mag')
-        sd['N'] = min(self.N, oq.sites_per_tile)
+        sd['N'] = len(tiles[0])
         sd['tasks'] = numpy.ceil(len(allargs))
         nbytes, msg = get_array_nbytes(sd)
         if nbytes > oq.max_data_transfer:

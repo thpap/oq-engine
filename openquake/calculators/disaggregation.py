@@ -91,7 +91,7 @@ def _iml4(rlzs, iml_disagg, imtls, poes_disagg, curves):
     return hdf5.ArrayWrapper(arr, {'rlzs': rlzs})
 
 
-def _prepare_ctxs(rupdata, cmaker, sitecol):
+def _prepare_ctxs(rupdata, cmaker, tile):
     ctxs = []
     for u in range(len(rupdata['mag'])):
         ctx = RuptureContext()
@@ -99,21 +99,23 @@ def _prepare_ctxs(rupdata, cmaker, sitecol):
             if not par.endswith('_'):
                 setattr(ctx, par, rupdata[par][u])
             else:  # distance parameters
-                setattr(ctx, par[:-1], rupdata[par][u])
+                setattr(ctx, par[:-1], rupdata[par][u, tile.sids])
         for par in cmaker.REQUIRES_SITES_PARAMETERS:
-            setattr(ctx, par, sitecol[par])
-        ctx.sids = sitecol.sids
+            setattr(ctx, par, tile[par])
+        ctx.sids = tile.sids
         ctxs.append(ctx)
     return numpy.array(ctxs)
 
 
-def compute_disagg(dstore, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
+def compute_disagg(dstore, tile, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
                    monitor):
     # see https://bugs.launchpad.net/oq-engine/+bug/1279247 for an explanation
     # of the algorithm used
     """
     :param dstore:
         a DataStore instance
+    :param tile:
+        a filtered SiteCollection corresponding to a tile of sites
     :param idxs:
         an array of indices to ruptures
     :param cmaker:
@@ -135,11 +137,10 @@ def compute_disagg(dstore, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
         oq.investigation_time)
     with monitor('reading rupdata', measuremem=True):
         dstore.open('r')
-        sitecol = dstore['sitecol']
         # NB: using dstore['rup/' + k][idxs] would be ultraslow!
         a, b = idxs.min(), idxs.max() + 1
         rupdata = {k: dstore['rup/' + k][a:b][idxs-a] for k in dstore['rup']}
-        ctxs = _prepare_ctxs(rupdata, cmaker, sitecol)  # ultra-fast
+        ctxs = _prepare_ctxs(rupdata, cmaker, tile)  # ultra-fast
         del rupdata
         close = numpy.array([ctx.rrup < 9999. for ctx in ctxs]).T  # (N, U)
 
@@ -148,9 +149,9 @@ def compute_disagg(dstore, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
     N, M, P, Z = iml4.shape
     g_by_z = numpy.zeros((N, Z), numpy.uint8)
     for g, rlzs in enumerate(cmaker.gsims.values()):
-        for (s, z), r in numpy.ndenumerate(iml4.rlzs):
+        for (sid, z), r in numpy.ndenumerate(iml4.rlzs):
             if r in rlzs:
-                g_by_z[s, z] = g
+                g_by_z[sid, z] = g
     eps3 = disagg._eps3(cmaker.trunclevel, oq.num_epsilon_bins)
     res = {'trti': trti, 'magi': magi}
     for m, im in enumerate(oq.imtls):
@@ -161,9 +162,9 @@ def compute_disagg(dstore, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
             disagg.set_mean_std(ctxs, [imt], cmaker.gsims)
 
         # disaggregate by site, IMT
-        for s, iml3 in enumerate(iml4):
+        for s, sid in enumerate(tile.sids):
             # dist_bins, lon_bins, lat_bins, eps_bins
-            bins = (bin_edges[0], bin_edges[1][s], bin_edges[2][s],
+            bins = (bin_edges[0], bin_edges[1][sid], bin_edges[2][sid],
                     bin_edges[3])
             close_ctxs = ctxs[close[s]]
             if len(close_ctxs) == 0:
@@ -171,10 +172,10 @@ def compute_disagg(dstore, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
             with dis_mon:
                 # 7D-matrix #distbins, #lonbins, #latbins, #epsbins, M=1, P, Z
                 matrix = disagg.disaggregate(
-                    close_ctxs, g_by_z[s], {imt: iml3[m]}, eps3, s,
+                    close_ctxs, g_by_z[sid], {imt: iml4[sid, m]}, eps3, s,
                     bins)[..., 0, :, :]  # 6D-matrix
                 if matrix.any():
-                    res[s, m] = matrix
+                    res[sid, m] = matrix
     return res
 
 
@@ -369,6 +370,8 @@ class DisaggregationCalculator(base.HazardCalculator):
         num_eff_rlzs = len(self.full_lt.sm_rlzs)
         task_inputs = []
         G, U = 0, 0
+        # build tiles of at most 100 sites
+        tiles = self.sitecol.split_in_tiles(numpy.ceil(self.N / 100))
         for gidx, magi in indices:
             trti = grp_ids[gidx][0] // num_eff_rlzs
             trt = self.trts[trti]
@@ -383,8 +386,9 @@ class DisaggregationCalculator(base.HazardCalculator):
                     indices[gidx, magi], maxweight, weight):
                 idxs = numpy.array([ri.index for ri in rupidxs])
                 U = max(U, len(idxs))
-                allargs.append((dstore, idxs, cmaker, self.iml4,
-                                trti, magi, self.bin_edges[1:], oq))
+                for tile in tiles:
+                    allargs.append((dstore, tile, idxs, cmaker, self.iml4,
+                                    trti, magi, self.bin_edges[1:], oq))
                 task_inputs.append((trti, magi, len(idxs)))
 
         nbytes, msg = get_array_nbytes(dict(N=self.N, G=G, U=U))
@@ -392,6 +396,7 @@ class DisaggregationCalculator(base.HazardCalculator):
         sd = self.shapedic.copy()
         sd.pop('trt')
         sd.pop('mag')
+        sd['N'] = min(self.N, 100)
         sd['tasks'] = numpy.ceil(len(allargs))
         nbytes, msg = get_array_nbytes(sd)
         if nbytes > oq.max_data_transfer:

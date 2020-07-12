@@ -99,7 +99,7 @@ def _prepare_ctxs(rupdata, cmaker, tile):
             if not par.endswith('_'):
                 setattr(ctx, par, rupdata[par][u])
             else:  # distance parameters
-                setattr(ctx, par[:-1], rupdata[par][u, tile.sids])
+                setattr(ctx, par[:-1], rupdata[par][u])
         for par in cmaker.REQUIRES_SITES_PARAMETERS:
             setattr(ctx, par, tile[par])
         ctx.sids = tile.sids
@@ -139,7 +139,13 @@ def compute_disagg(dstore, tile, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
         dstore.open('r')
         # NB: using dstore['rup/' + k][idxs] would be ultraslow!
         a, b = idxs.min(), idxs.max() + 1
-        rupdata = {k: dstore['rup/' + k][a:b][idxs-a] for k in dstore['rup']}
+        rupdata = {}
+        for k in dstore['rup']:
+            v = dstore['rup/' + k][a:b][idxs-a]
+            if k.endswith('_'):  # distance parameters
+                rupdata[k] = v[:, tile.sids]
+            else:
+                rupdata[k] = v
         ctxs = _prepare_ctxs(rupdata, cmaker, tile)  # ultra-fast
         del rupdata
         close = numpy.array([ctx.rrup < 9999. for ctx in ctxs]).T  # (N, U)
@@ -370,8 +376,9 @@ class DisaggregationCalculator(base.HazardCalculator):
         num_eff_rlzs = len(self.full_lt.sm_rlzs)
         task_inputs = []
         G, U = 0, 0
-        # build tiles of at most 100 sites
-        tiles = self.sitecol.split_in_tiles(numpy.ceil(self.N / 100))
+        # build tiles
+        tiles = self.sitecol.split_in_tiles(
+            numpy.ceil(self.N / oq.sites_per_tile))
         for gidx, magi in indices:
             trti = grp_ids[gidx][0] // num_eff_rlzs
             trt = self.trts[trti]
@@ -396,7 +403,7 @@ class DisaggregationCalculator(base.HazardCalculator):
         sd = self.shapedic.copy()
         sd.pop('trt')
         sd.pop('mag')
-        sd['N'] = min(self.N, 100)
+        sd['N'] = min(self.N, oq.sites_per_tile)
         sd['tasks'] = numpy.ceil(len(allargs))
         nbytes, msg = get_array_nbytes(sd)
         if nbytes > oq.max_data_transfer:

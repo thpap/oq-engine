@@ -388,7 +388,7 @@ class DisaggregationCalculator(base.HazardCalculator):
                  'imtls': oq.imtls})
             G = max(G, len(cmaker.gsims))
             for rupidxs in block_splitter(
-                    indices[gidx, magi], maxweight, weight):
+                    indices[gidx, magi], maxweight * len(tiles), weight):
                 idxs = numpy.array([ri.index for ri in rupidxs])
                 U = max(U, len(idxs))
                 for tile in tiles:
@@ -396,12 +396,13 @@ class DisaggregationCalculator(base.HazardCalculator):
                                     trti, magi, self.bin_edges[1:], oq))
                 task_inputs.append((trti, magi, len(idxs)))
 
-        nbytes, msg = get_array_nbytes(dict(N=self.N, G=G, U=U))
+        N1 = len(tiles[0])  # tile size
+        nbytes, msg = get_array_nbytes(dict(N=N1, G=G, U=U))
         logging.info('Maximum mean_std per task:\n%s', msg)
         sd = self.shapedic.copy()
         sd.pop('trt')
         sd.pop('mag')
-        sd['N'] = len(tiles[0])
+        sd['N'] = N1
         sd['tasks'] = numpy.ceil(len(allargs))
         nbytes, msg = get_array_nbytes(sd)
         if nbytes > oq.max_data_transfer:

@@ -140,12 +140,12 @@ def compute_disagg(dstore, tile, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
         # NB: using dstore['rup/' + k][idxs] would be ultraslow!
         a, b = idxs.min(), idxs.max() + 1
         rupdata = {}
+        slc = slice(tile.sids[0], tile.sids[-1] + 1)
         for k in dstore['rup']:
-            v = dstore['rup/' + k][a:b][idxs-a]
             if k.endswith('_'):  # distance parameters
-                rupdata[k] = v[:, tile.sids]
+                rupdata[k] = dstore['rup/' + k][a:b][idxs-a, slc]
             else:
-                rupdata[k] = v
+                rupdata[k] = dstore['rup/' + k][a:b][idxs-a]
         ctxs = _prepare_ctxs(rupdata, cmaker, tile)  # ultra-fast
         del rupdata
         close = numpy.array([ctx.rrup < 9999. for ctx in ctxs]).T  # (N, U)

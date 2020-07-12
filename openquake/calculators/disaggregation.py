@@ -394,7 +394,7 @@ class DisaggregationCalculator(base.HazardCalculator):
                 for tile in tiles:
                     allargs.append((dstore, tile, idxs, cmaker, self.iml4,
                                     trti, magi, self.bin_edges[1:], oq))
-                task_inputs.append((trti, magi, len(idxs)))
+                    task_inputs.append((trti, magi, len(idxs)))
 
         N1 = len(tiles[0])  # tile size
         nbytes, msg = get_array_nbytes(dict(N=N1, G=G, U=U))

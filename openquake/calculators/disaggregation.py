@@ -91,18 +91,17 @@ def _iml4(rlzs, iml_disagg, imtls, poes_disagg, curves):
     return hdf5.ArrayWrapper(arr, {'rlzs': rlzs})
 
 
-def _prepare_ctxs(dstore, idxs, cmaker, tile):
-    dstore.open('r')
-    # NB: using dstore['rup/' + k][idxs] would be ultraslow!
-    a, b = idxs.min(), idxs.max() + 1
+def prepare_ctxs(dstore, cmaker, gidx, tile, mag_edges):
+    ok = dstore['rup/grp_id'][:] == gidx
+    logging.info('Considering %s, gidx=%s, %d ruptures', tile, gidx, ok.sum())
     rupdata = {}
     slc = slice(tile.sids[0], tile.sids[-1] + 1)
     for k in dstore['rup']:
         if k.endswith('_'):  # distance parameters
-            rupdata[k] = dstore['rup/' + k][a:b][idxs-a, slc]
+            rupdata[k] = dstore['rup/' + k][ok, slc]
         else:
-            rupdata[k] = dstore['rup/' + k][a:b][idxs-a]
-    ctxs = []
+            rupdata[k] = dstore['rup/' + k][ok]
+    ctxs = [[] for _ in mag_edges]  # ctxs by magi
     for u in range(len(rupdata['mag'])):
         ctx = RuptureContext()
         for par in rupdata:
@@ -113,21 +112,24 @@ def _prepare_ctxs(dstore, idxs, cmaker, tile):
         for par in cmaker.REQUIRES_SITES_PARAMETERS:
             setattr(ctx, par, tile[par])
         ctx.sids = tile.sids
-        ctxs.append(ctx)
-    return numpy.array(ctxs)
+        magi = numpy.searchsorted(mag_edges, ctx.mag) - 1
+        ctxs[magi].append(ctx)
+    out = []
+    for magi, contexts in enumerate(ctxs):
+        if contexts:
+            out.append((magi, numpy.array(contexts)))
+    return out
 
 
-def compute_disagg(dstore, tile, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
+def compute_disagg(tile, ctxs, cmaker, iml4, trti, magi, bin_edges, oq,
                    monitor):
     # see https://bugs.launchpad.net/oq-engine/+bug/1279247 for an explanation
     # of the algorithm used
     """
-    :param dstore:
-        a DataStore instance
     :param tile:
         a filtered SiteCollection corresponding to a tile of sites
-    :param idxs:
-        an array of indices to ruptures
+    :param ctxs:
+        an array of contexts
     :param cmaker:
         a :class:`openquake.hazardlib.gsim.base.ContextMaker` instance
     :param iml4:
@@ -145,9 +147,6 @@ def compute_disagg(dstore, tile, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
     """
     RuptureContext.temporal_occurrence_model = PoissonTOM(
         oq.investigation_time)
-    with monitor('reading rupdata', measuremem=True):
-        ctxs = _prepare_ctxs(dstore, idxs, cmaker, tile)
-        close = numpy.array([ctx.rrup < 9999. for ctx in ctxs]).T  # (N, U)
 
     dis_mon = monitor('disaggregate', measuremem=False)
     ms_mon = monitor('disagg mean_std', measuremem=True)
@@ -159,6 +158,7 @@ def compute_disagg(dstore, tile, idxs, cmaker, iml4, trti, magi, bin_edges, oq,
                 g_by_z[sid, z] = g
     eps3 = disagg._eps3(cmaker.trunclevel, oq.num_epsilon_bins)
     res = {'trti': trti, 'magi': magi}
+    close = numpy.array([ctx.rrup < 9999. for ctx in ctxs]).T  # (N, U)
     for m, im in enumerate(oq.imtls):
         imt = from_string(im)
         with ms_mon:
@@ -366,7 +366,6 @@ class DisaggregationCalculator(base.HazardCalculator):
                   else self.datastore)
         mag_edges = self.bin_edges[0]
         indices = get_indices_by_gidx_mag(dstore, mag_edges)
-        allargs = []
         totweight = sum(sum(ri.weight for ri in indices[gm])
                         for gm in indices)
         maxweight = int(numpy.ceil(totweight / (oq.concurrent_tasks or 1)))
@@ -378,32 +377,32 @@ class DisaggregationCalculator(base.HazardCalculator):
         # build tiles
         tiles = self.sitecol.split_in_tiles(
             numpy.ceil(self.N / oq.sites_per_tile))
-        for gidx, magi in indices:
-            trti = grp_ids[gidx][0] // num_eff_rlzs
-            trt = self.trts[trti]
-            cmaker = ContextMaker(
-                trt, rlzs_by_gsim[gidx],
-                {'truncation_level': oq.truncation_level,
-                 'maximum_distance': oq.maximum_distance,
-                 'collapse_level': oq.collapse_level,
-                 'imtls': oq.imtls})
-            G = max(G, len(cmaker.gsims))
-            for rupidxs in block_splitter(
-                    indices[gidx, magi], maxweight, weight):
-                idxs = numpy.array([ri.index for ri in rupidxs])
-                U = max(U, len(idxs))
-                for tile in tiles:
-                    allargs.append((dstore, tile, idxs, cmaker, self.iml4,
-                                    trti, magi, self.bin_edges[1:], oq))
-                task_inputs.append((trti, magi, len(idxs)))
+        smap = parallel.Starmap(compute_disagg, h5=self.datastore.hdf5)
+        for gidx, grp_ids in enumerate(grp_ids):
+            for tile in tiles:
+                trti = grp_ids[0] // num_eff_rlzs
+                trt = self.trts[trti]
+                cmaker = ContextMaker(
+                    trt, rlzs_by_gsim[gidx],
+                    {'truncation_level': oq.truncation_level,
+                     'maximum_distance': oq.maximum_distance,
+                     'collapse_level': oq.collapse_level,
+                     'imtls': oq.imtls})
+                G = max(G, len(cmaker.gsims))
+                for magi, ctxs in prepare_ctxs(
+                        dstore, cmaker, gidx, tile, mag_edges):
+                    smap.submit((tile, ctxs, cmaker, self.iml4,
+                                 trti, magi, self.bin_edges[1:], oq))
+                    U += len(ctxs)
+                    task_inputs.append((trti, magi, len(ctxs)))
 
         nbytes, msg = get_array_nbytes(dict(N=self.N, G=G, U=U))
         logging.info('Maximum mean_std per task:\n%s', msg)
         sd = self.shapedic.copy()
         sd.pop('trt')
         sd.pop('mag')
-        sd['N'] = min(self.N, oq.sites_per_tile)
-        sd['tasks'] = numpy.ceil(len(allargs))
+        sd['N'] = len(tiles[0])
+        sd['tasks'] = numpy.ceil(len(task_inputs))
         nbytes, msg = get_array_nbytes(sd)
         if nbytes > oq.max_data_transfer:
             raise ValueError(
@@ -412,9 +411,6 @@ class DisaggregationCalculator(base.HazardCalculator):
         logging.info('Estimated data transfer:\n%s', msg)
         dt = numpy.dtype([('trti', U8), ('magi', U8), ('nrups', U32)])
         self.datastore['disagg_task'] = numpy.array(task_inputs, dt)
-        self.datastore.swmr_on()
-        smap = parallel.Starmap(
-            compute_disagg, allargs, h5=self.datastore.hdf5)
         results = smap.reduce(self.agg_result, AccumDict(accum={}))
         return results  # imti, sid -> trti, magi -> 6D array
 

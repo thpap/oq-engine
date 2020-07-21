@@ -48,18 +48,6 @@ U32 = numpy.uint32
 F32 = numpy.float32
 
 
-def _check_curves(sid, rlzs, curves, imtls, poes_disagg):
-    # there may be sites where the sources are too small to produce
-    # an effect at the given poes_disagg
-    for rlz, curve in zip(rlzs, curves):
-        for imt in imtls:
-            max_poe = curve[imt].max()
-            for poe in poes_disagg:
-                if poe > max_poe:
-                    logging.warning(POE_TOO_BIG, sid, poe, max_poe, rlz, imt)
-                    return True
-
-
 def _matrix(matrices, num_trts, num_mag_bins):
     # convert a dict trti, magi -> matrix into a single matrix
     trti, magi = next(iter(matrices))
@@ -253,23 +241,22 @@ class DisaggregationCalculator(base.HazardCalculator):
         Raise an error if the given poes_disagg are too small compared to
         the hazard curves.
         """
-        oq = self.oqparam
-        # there may be sites where the sources are too small to produce
-        # an effect at the given poes_disagg
-        ok_sites = []
-        for sid in self.sitecol.sids:
-            if all(curve is None for curve in curves[sid]):
-                ok_sites.append(sid)
-                continue
-            bad = _check_curves(sid, rlzs[sid], curves[sid],
-                                oq.imtls, oq.poes_disagg)
-            if not bad:
-                ok_sites.append(sid)
-        if len(ok_sites) == 0:
+        ok4 = numpy.zeros((self.N, self.M, self.P, self.Z), bool)
+        for s in self.sitecol.sids:
+            for z, rlz in enumerate(rlzs[s]):
+                curve = curves[s][z]
+                if curve is None:
+                    ok4[s, :, :, z] = True
+                else:
+                    # there may be situations where the hazard is too small
+                    for m, imt in enumerate(self.oqparam.imtls):
+                        max_poe = curve[imt][0]  # first level
+                        for p, poe in enumerate(self.poes_disagg):
+                            ok4[s, m, p, z] = poe <= max_poe
+        if ok4.sum() == 0:
+            # poe > max_poe in all sitations
             raise SystemExit('Cannot do any disaggregation')
-        elif len(ok_sites) < self.N:
-            logging.warning('Doing the disaggregation on %s', self.sitecol)
-        return ok_sites
+        return ok4
 
     def full_disaggregation(self):
         """
@@ -293,6 +280,7 @@ class DisaggregationCalculator(base.HazardCalculator):
         self.poes_disagg = oq.poes_disagg or (None,)
         self.imts = list(oq.imtls)
         self.M = len(self.imts)
+        self.P = len(self.poes_disagg)
         ws = [rlz.weight for rlz in self.full_lt.get_realizations()]
         self.pgetter = getters.PmapGetter(
             self.datastore, ws, self.sitecol.sids)
@@ -323,12 +311,11 @@ class DisaggregationCalculator(base.HazardCalculator):
             # no hazard curves are needed
             self.poe_id = {None: 0}
             curves = [[None for z in range(Z)] for s in range(self.N)]
-            self.ok_sites = set(self.sitecol.sids)
         else:
             self.poe_id = {poe: i for i, poe in enumerate(oq.poes_disagg)}
             curves = [self.get_curve(sid, rlzs[sid])
                       for sid in self.sitecol.sids]
-            self.ok_sites = set(self.check_poes_disagg(curves, rlzs))
+        self.ok4 = self.check_poes_disagg(curves, rlzs)
         self.iml4 = _iml4(rlzs, oq.iml_disagg, oq.imtls,
                           self.poes_disagg, curves)
         self.datastore['iml4'] = self.iml4
@@ -497,6 +484,9 @@ class DisaggregationCalculator(base.HazardCalculator):
         for (s, m, k), mat6 in sorted(results.items()):
             imt = self.imts[m]
             for p, poe in enumerate(self.poes_disagg):
+                ok = self.ok4[s, m, p].sum()
+                if not ok:
+                    continue
                 mat5 = mat6[..., p, :]
                 if k == 0 and m == 0 and poe == self.poes_disagg[-1]:
                     # mat5 has shape (T, Ma, D, E, Z)
@@ -504,8 +494,8 @@ class DisaggregationCalculator(base.HazardCalculator):
                 poe2 = pprod(mat5, axis=(0, 1, 2, 3))
                 self.datastore['poe4'][s, m, p] = poe2  # shape Z
                 poe_agg = poe2.mean()
-                if (poe and abs(1 - poe_agg / poe) > .1 and not count[s]
-                        and s in self.ok_sites):
+                if (ok == self.Z and poe and abs(1 - poe_agg / poe) > .1
+                        and not count[s]):
                     logging.warning(
                         'Site #%d, IMT=%s: poe_agg=%s is quite different from '
                         'the expected poe=%s; perhaps the number of intensity '

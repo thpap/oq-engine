@@ -20,11 +20,12 @@
 Disaggregation calculator core functionality
 """
 import logging
+import operator
 import numpy
 
 from openquake.baselib import parallel, hdf5
 from openquake.baselib.general import (
-    AccumDict, get_array_nbytes, humansize, pprod, agg_probs)
+    AccumDict, get_array_nbytes, humansize, pprod, agg_probs, block_splitter)
 from openquake.baselib.python3compat import encode
 from openquake.hazardlib import stats
 from openquake.hazardlib.calc import disagg
@@ -32,6 +33,7 @@ from openquake.hazardlib.imt import from_string
 from openquake.hazardlib.gsim.base import ContextMaker
 from openquake.hazardlib.contexts import RuptureContext
 from openquake.hazardlib.tom import PoissonTOM
+from openquake.hazardlib.source.rupture import RuptureProxy
 from openquake.commonlib import util
 from openquake.calculators import getters
 from openquake.calculators import base
@@ -355,26 +357,35 @@ class DisaggregationCalculator(base.HazardCalculator):
         mags = set()
         for trt, dset in self.datastore['source_mags'].items():
             mags.update(dset[:])
-        mags = sorted(mags)
-        allargs = []
-        totrups = sum(len(dset['rctx']) for name, dset in dstore.items()
-                      if name.startswith('mag_'))  # total number of ruptures
+        totrups = 0
+        totweight = 0
+        maxsids = 0
+        ns = {}  # mag -> num_sids
+        for name, dset in dstore.items():
+            if name.startswith('mag_'):
+                nsids = numpy.array([len(sids) for sids in dset['sids_']])
+                ns[name] = nsids
+                maxsids = max(maxsids, nsids.max())
+                totweight += nsids.sum()
+                totrups += len(nsids)
+
         grp_ids = dstore['grp_ids'][:]
-        maxweight = min(int(numpy.ceil(totrups / (oq.concurrent_tasks or 1))),
-                        oq.ruptures_per_block * 14)  # at maximum 7000
+        maxw = min(int(numpy.ceil(totweight / (oq.concurrent_tasks or 1))),
+                   oq.ruptures_per_block * 100)  # at maximum 50000
         rlzs_by_gsim = self.full_lt.get_rlzs_by_gsim_list(grp_ids)
         num_eff_rlzs = len(self.full_lt.sm_rlzs)
         task_inputs = []
-        U, G, S = 0, 0, 0
-        for mag in mags:
+        U, G = 0, 0
+        allargs = []
+        for mag in sorted(mags):
             rctx = dstore['mag_%s/rctx' % mag][:]
-            nsids = numpy.array(
-                [len(sids) for sids in dstore['mag_%s/sids_' % mag]])
-            S = max(S, nsids.max())
             for gidx, gids in enumerate(grp_ids):
-                array = rctx[rctx['gidx'] == gidx]
-                if len(array) == 0:
+                mask = rctx['gidx'] == gidx
+                if mask.sum() == 0:
                     continue
+                array = rctx[mask]
+                nsids = ns['mag_%s' % mag][mask]
+                proxies = [RuptureProxy(r, n) for r, n in zip(array,  nsids)]
                 trti = gids[0] // num_eff_rlzs
                 trt = self.trts[trti]
                 cmaker = ContextMaker(
@@ -384,15 +395,16 @@ class DisaggregationCalculator(base.HazardCalculator):
                      'collapse_level': oq.collapse_level,
                      'imtls': oq.imtls})
                 G = max(G, len(cmaker.gsims))
-                nsplits = numpy.ceil(len(array) / maxweight)
-                for arr in numpy.array_split(array, nsplits):
-                    nr = len(arr)
+                for blk in block_splitter(proxies, maxw,
+                                          lambda p: numpy.sqrt(p.nsites)):
+                    nr = len(blk)
                     U = max(U, nr)
-                    allargs.append((dstore, arr, cmaker, self.iml4,
-                                    trti, mag, self.bin_edges, oq))
+                    arr = numpy.array([p.rec for p in blk])
+                    allargs.append((dstore, arr, cmaker,
+                                    self.iml4, trti, mag, self.bin_edges, oq))
                     task_inputs.append((trti, mag, nr))
 
-        nbytes, msg = get_array_nbytes(dict(S=S, M=self.M, G=G, U=U))
+        nbytes, msg = get_array_nbytes(dict(S=maxsids, M=self.M, G=G, U=U))
         logging.info('Maximum mean_std per task:\n%s', msg)
 
         s = self.shapedic

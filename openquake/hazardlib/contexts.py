@@ -428,6 +428,7 @@ class PmapMaker(object):
         self.poe_mon = cmaker.mon('get_poes', measuremem=False)
         self.pne_mon = cmaker.mon('composing pnes', measuremem=False)
         self.gmf_mon = cmaker.mon('computing mean_std', measuremem=False)
+        cmaker.cum_mean = numpy.zeros(len(cmaker.gsims))  # size G
 
     def _update_pmap(self, ctxs, pmap=None):
         # compute PoEs and update pmap
@@ -439,6 +440,7 @@ class PmapMaker(object):
             with self.gmf_mon:
                 # shape (2, N, M, G)
                 mean_std = ctx.get_mean_std(self.imts, self.gsims)
+                self.cmaker.cum_mean += mean_std[0].sum(axis=(0, 1))
             with self.poe_mon:
                 ll = self.loglevels
                 af = self.cmaker.af

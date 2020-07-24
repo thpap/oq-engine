@@ -209,7 +209,9 @@ class ClassicalCalculator(base.HazardCalculator):
                     eff_sites += rec[1] / rec[0]
             self.by_task[extra['task_no']] = (
                 eff_rups, eff_sites, sorted(srcids))
-            for grp_id, pmap in dic['pmap'].items():
+            pmapdic = dic['pmap']
+            acc += pmapdic.pop('cum_mean', 0)
+            for grp_id, pmap in pmapdic.items():
                 if pmap and grp_id in acc:
                     acc[grp_id] |= pmap
                 else:
@@ -370,6 +372,9 @@ class ClassicalCalculator(base.HazardCalculator):
         self.calc_times = AccumDict(accum=numpy.zeros(3, F32))
         try:
             acc = smap.reduce(self.agg_dicts, acc0)
+            for k in list(acc):
+                if isinstance(k, str):  # trt -> cum_mean
+                    print(k, acc.pop(k))
             self.store_rlz_info(acc.eff_ruptures)
         finally:
             with self.monitor('store source_info'):

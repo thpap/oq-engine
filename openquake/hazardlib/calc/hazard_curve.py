@@ -132,6 +132,7 @@ def classical(group, src_filter, gsims, param, monitor=Monitor()):
     if cluster:
         tom = getattr(group, 'temporal_occurrence_model')
         pmap = _cluster(param['imtls'], tom, gsims, pmap)
+    pmap['cum_mean'] = {cmaker.trt: cmaker.cum_mean}
     return dict(pmap=pmap, calc_times=calc_times,
                 rup_data=rup_data, extra=extra)
 

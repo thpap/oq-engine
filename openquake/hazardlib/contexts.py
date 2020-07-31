@@ -1042,7 +1042,7 @@ def ruptures_by_mag_dist(sources, srcfilter, gsims, params, monitor):
     for src, sites in srcfilter(sources):
         for rup in src.iter_ruptures(shift_hypo=cmaker.shift_hypo):
             try:
-                _rctx, dctx = cmaker.make_contexts(sites, rup)
+                _, dctx = cmaker.make_contexts(sites, rup)
             except FarAwayRupture:
                 continue
             di = numpy.searchsorted(dist_bins, dctx.rrup[0])

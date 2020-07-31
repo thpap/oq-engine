@@ -329,7 +329,11 @@ class ContextMaker(object):
                 dctx.rjb = reqv
             if 'rrup' in self.REQUIRES_DISTANCES:
                 dctx.rrup = numpy.sqrt(reqv**2 + rupture.hypocenter.depth**2)
-        return self.make_rctx(rupture), sites, dctx
+        ctx = self.make_rctx(rupture)
+        for par in self.REQUIRES_SITES_PARAMETERS:
+            setattr(ctx, par, sites[par])
+        ctx.sids = sites.sids
+        return ctx, dctx
 
     def make_ctxs(self, ruptures, sites, gidx, grp_ids, fewsites):
         """
@@ -339,13 +343,10 @@ class ContextMaker(object):
         ctxs = []
         for rup in ruptures:
             try:
-                ctx, r_sites, dctx = self.make_contexts(
+                ctx, dctx = self.make_contexts(
                     getattr(rup, 'sites', sites), rup)
             except FarAwayRupture:
                 continue
-            for par in self.REQUIRES_SITES_PARAMETERS:
-                setattr(ctx, par, r_sites[par])
-            ctx.sids = r_sites.sids
             for par in self.REQUIRES_DISTANCES | {'rrup'}:
                 setattr(ctx, par, getattr(dctx, par))
             ctx.grp_ids = grp_ids
@@ -1041,7 +1042,7 @@ def ruptures_by_mag_dist(sources, srcfilter, gsims, params, monitor):
     for src, sites in srcfilter(sources):
         for rup in src.iter_ruptures(shift_hypo=cmaker.shift_hypo):
             try:
-                sctx, dctx = cmaker.make_contexts(sites, rup)
+                _rctx, dctx = cmaker.make_contexts(sites, rup)
             except FarAwayRupture:
                 continue
             di = numpy.searchsorted(dist_bins, dctx.rrup[0])

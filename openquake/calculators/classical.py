@@ -86,20 +86,26 @@ def classical_split_filter(srcs, srcfilter, gsims, params, monitor):
         srcs = random_filtered_sources(splits, srcfilter, ss)
         yield classical(srcs, srcfilter, gsims, params, monitor)
         return
+
+    def weight(src, N=len(srcfilter.sitecol.complete)):
+        n = 10 * numpy.sqrt(len(src.indices) / N)
+        return src.weight * params['rescale_weight'] * n
+    maxw = params['max_weight']
+
     # NB: splitting all the sources improves the distribution significantly,
     # compared to splitting only the big sources
-    with monitor("splitting/filtering sources"):
+    with monitor("splitting sources"):
         splits, _stime = split_sources(srcs)
-        sources = list(srcfilter.filter(splits))
+
+    for sf in srcfilter.split_in_tiles(params['split_in_tiles']):
+        yield from _subtasks(splits, maxw, weight, sf, gsims, params, monitor)
+
+
+def _subtasks(splits, maxw, weight, srcfilter, gsims, params, monitor):
+    sources = list(srcfilter.filter(splits))
     if not sources:
         yield {'pmap': {}}
         return
-    maxw = params['max_weight']
-    N = len(srcfilter.sitecol.complete)
-
-    def weight(src):
-        n = 10 * numpy.sqrt(len(src.indices) / N)
-        return src.weight * params['rescale_weight'] * n
     blocks = list(block_splitter(sources, maxw, weight))
     subtasks = len(blocks) - 1
     for block in blocks[:-1]:
@@ -448,6 +454,7 @@ class ClassicalCalculator(base.HazardCalculator):
             shift_hypo=oq.shift_hypo, max_weight=max_weight,
             collapse_level=oq.collapse_level,
             max_sites_disagg=oq.max_sites_disagg,
+            split_in_tiles=oq.split_in_tiles,
             af=self.af)
         srcfilter = self.src_filter()
         for sg in src_groups:

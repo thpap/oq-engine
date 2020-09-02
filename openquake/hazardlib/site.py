@@ -371,7 +371,7 @@ class SiteCollection(object):
         for seq in split_in_blocks(range(len(self)), hint or 1):
             sc = SiteCollection.__new__(SiteCollection)
             sc.array = self.array[numpy.array(seq, int)]
-            sc.complete = self
+            sc.complete = sc
             tiles.append(sc)
         return tiles
 

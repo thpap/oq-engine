@@ -215,6 +215,7 @@ class OqParam(valid.ParamSet):
     source_id = valid.Param(valid.namelist, [])
     spatial_correlation = valid.Param(valid.Choice('yes', 'no', 'full'), 'yes')
     specific_assets = valid.Param(valid.namelist, [])
+    split_in_tiles = valid.Param(valid.positiveint, 1)
     split_sources = valid.Param(valid.boolean, True)
     ebrisk_maxsize = valid.Param(valid.positivefloat, 1E8)  # used in ebrisk
     min_weight = valid.Param(valid.positiveint, 6_000)  # used in classical
